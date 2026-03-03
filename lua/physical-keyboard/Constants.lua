@@ -1,0 +1,3 @@
+return {
+	PluginTitle = "Physical keyboard",
+}
