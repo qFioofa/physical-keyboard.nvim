@@ -1,20 +1,20 @@
-local _c = require("physical-keyboard.const.Constants")
+local c = require("physical-keyboard.const.Constants")
 
 ---@class VimMessage
-local M = {
-	enabled = true,
-	title = "",
-}
+local M = {}
 
 M.__index = M
 
 local _default = {
 	enabled = true,
-	title = _c.PluginTitle or "",
+	title = c.PluginTitle or "",
 }
 
 function M.new()
-	local self = setmetatable(_default, M)
+	local self = setmetatable({}, M)
+	for k, v in pairs(_default) do
+		self[k] = v
+	end
 	return self
 end
 

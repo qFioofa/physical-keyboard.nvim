@@ -1,15 +1,7 @@
 local Layout = require("physical-keyboard.layout.Layout")
-local VimMessages = require("physical-keyboard.utils.Message")
 
 ---@class LayoutHandler
-local M = {
-	_notify = true,
-	_debug = false,
-	_active_plugin = true,
-	_active_layouts = {},
-
-	_vimMessageInstance = nil,
-}
+local M = {}
 
 M.__index = M
 
@@ -18,12 +10,16 @@ local _default = {
 	_debug = false,
 	_active_plugin = true,
 	_active_layouts = {},
+	_layouts = {},
+	_layout_list = {},
 
-	_vimMessageInstance = VimMessages.new(),
+	_vimMessageInstance = nil,
 }
 
-function M.new()
+---@param vimMessageInstance VimMessage
+function M.new(vimMessageInstance)
 	local self = setmetatable(_default, M)
+	self._vimMessageInstance = vimMessageInstance
 	return self
 end
 

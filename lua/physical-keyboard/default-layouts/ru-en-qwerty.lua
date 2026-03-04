@@ -8,7 +8,7 @@ ru_en:setActive(true)
 ru_en:setAutoCapical(true)
 ru_en:setLayoutName("qwerty")
 ru_en:setOnError(function(message)
-	g.VimNotify(message)
+	g.VimNotify:e(message)
 end)
 
 ru_en:setMap({

@@ -1,3 +1,6 @@
+local c = require("physical-keyboard.const.Constants")
+
+--- Must check for <C-...> commands too
 ---@param char string
 local function physicalCharTranslation(char)
 	if type(char) ~= "string" then
