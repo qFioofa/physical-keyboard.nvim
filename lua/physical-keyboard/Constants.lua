@@ -1,3 +1,0 @@
-return {
-	PluginTitle = "Physical keyboard",
-}

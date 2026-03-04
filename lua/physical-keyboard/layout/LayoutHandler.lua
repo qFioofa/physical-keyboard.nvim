@@ -1,5 +1,5 @@
-local Layout = require("physical-keyboard.Layout")
-local VimMessages = require("physical-keyboard.Message")
+local Layout = require("physical-keyboard.layout.Layout")
+local VimMessages = require("physical-keyboard.utils.Message")
 
 ---@class LayoutHandler
 local M = {

@@ -1,13 +1,15 @@
-local _c = require("physical-keyboard.Constants")
+local _c = require("physical-keyboard.const.Constants")
 
 ---@class VimMessage
 local M = {
+	enabled = true,
 	title = "",
 }
 
 M.__index = M
 
 local _default = {
+	enabled = true,
 	title = _c.PluginTitle or "",
 }
 
@@ -22,6 +24,15 @@ function M:is_text(message)
 	return type(message) == "string"
 end
 
+---@param enable boolean
+function M:enable(enable)
+	if type(enable) ~= "boolean" then
+		enable = _default.enabled
+	end
+
+	self.enabled = enable
+end
+
 ---@param message string
 ---@return string
 function M:_format_message(message)
@@ -31,6 +42,10 @@ end
 ---@param message string
 ---@param level integer|nil
 function M:_notify(message, level)
+	if not self.enabled then
+		return
+	end
+
 	level = level or vim.log.levels.INFO
 	local formatted_msg = self:_format_message(message)
 	vim.notify(formatted_msg, level)
