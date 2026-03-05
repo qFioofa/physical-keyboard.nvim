@@ -35,12 +35,14 @@ function M:enable(enable)
 	self.enabled = enable
 end
 
+---@private
 ---@param message string
 ---@return string
 function M:_format_message(message)
 	return string.format("\n [ %s ] \n%s", self.title, message)
 end
 
+---@private
 ---@param message string
 ---@param level integer|nil
 function M:_notify(message, level)
