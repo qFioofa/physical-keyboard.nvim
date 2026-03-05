@@ -1,6 +1,8 @@
 local c = require("physical-keyboard.const.Constants")
 
 ---@class VimMessage
+---@field enabled boolean
+---@field title string
 local M = {}
 
 M.__index = M
@@ -24,7 +26,7 @@ function M:is_text(message)
 	return type(message) == "string"
 end
 
----@param enable boolean
+---@param enable boolean|any
 function M:enable(enable)
 	if type(enable) ~= "boolean" then
 		enable = _default.enabled
@@ -36,7 +38,7 @@ end
 ---@param message string
 ---@return string
 function M:_format_message(message)
-	return string.format("[%s] %s", self.title, message)
+	return string.format("\n [ %s ] \n%s", self.title, message)
 end
 
 ---@param message string
