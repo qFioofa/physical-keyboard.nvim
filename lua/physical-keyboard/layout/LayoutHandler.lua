@@ -68,7 +68,7 @@ function M:disablePlugin()
 
 	self._active_plugin = false
 	local _save_active_layouts = u.deepcopy(self._active_layouts)
-	for _, layoutName in ipairs(self._active_layouts) do
+	for _, layoutName in ipairs(_save_active_layouts) do
 		self:_cleanLayout(layoutName)
 	end
 	self._active_layouts_plugin_save = _save_active_layouts
@@ -245,32 +245,85 @@ function M:_isLayoutRegisted(layoutName)
 	return true
 end
 
----@private
----@param layoutName string
----@return boolean
 function M:_activateLayout(layoutName)
 	if not u.isInTable(self._layout_list, layoutName) then
 		return false
 	end
 
+	local layout = self._layouts[layoutName]
+	if not layout then
+		return false
+	end
+
+	if not layout.active then
+		return false
+	end
+
+	local ns_id = vim.api.nvim_create_namespace("LayoutMappings_" .. layoutName)
+	layout:setNsIdMappings(ns_id)
+
+	for original_char, translated_char in pairs(layout.map) do
+		if
+			type(original_char) == "string"
+			and type(translated_char) == "string"
+		then
+			vim.api.nvim_buf_set_keymap(
+				0,
+				layout.vim_mode,
+				original_char,
+				translated_char,
+				{
+					noremap = false,
+					silent = true,
+					nowait = false,
+					expr = false,
+					unique = false,
+					desc = "PKB_Translation_" .. layoutName,
+				}
+			)
+		end
+	end
+
 	pcall(function()
-		self._vimMessageInstance:i("✓ Layout: " .. layoutName .. " activated")
+		self._vimMessageInstance:i(
+			"✓ Layout: " .. layoutName .. " mappings created and activated"
+		)
 	end)
 
 	return true
 end
 
----@private
----@param layoutName string
----@return boolean
 function M:_cleanLayout(layoutName)
 	if not u.isInTable(self._layout_list, layoutName) then
 		return false
 	end
 
+	local layout = self._layouts[layoutName]
+	if not layout then
+		self:_on_error("Layout object not found during cleanup: " .. layoutName)
+		return false
+	end
+
+	local ns_id = layout:getNsIdMappings()
+
+	if ns_id then
+		for original_char, _ in pairs(layout.map) do
+			if type(original_char) == "string" then
+				pcall(function()
+					vim.keymap.del(
+						layout.vim_mode,
+						original_char,
+						{ buffer = 0, nsid = ns_id }
+					)
+				end)
+			end
+		end
+		layout:setNsIdMappings(nil)
+	end
+
 	pcall(function()
 		self._vimMessageInstance:i(
-			"✓ Layout: " .. layoutName .. " deactivated"
+			"✓ Layout: " .. layoutName .. " mappings removed and deactivated"
 		)
 	end)
 

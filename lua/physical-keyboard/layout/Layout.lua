@@ -1,14 +1,71 @@
 local VimModsModule = require("physical-keyboard.utils.VimMods")
 local isValidVimMode = VimModsModule.isValidVimMode
 local VimMods = VimModsModule.VimMods
+local u = require("physical-keyboard.utils.Utils")
+
+--- @enum
+--- @class FormMapOptions
+local FormMapOptions = {
+	--- Include all options below
+	ALL = "all",
+
+	--- Automatically creates mappings for uppercase letters based on lowercase ones.
+	--- Example: If `map['ф'] = 'a'`, this option adds `map['Ф'] = 'A'`.
+	--- This respects the standard QWERTY uppercase mapping (e.g., 'A' for 'a', 'L' for 'l').
+	AUTOCAPITAL = "auto_capital",
+
+	--- Automatically generates mappings for common modifier keys (Ctrl, Alt, Shift)
+	--- applied to the characters defined in the base map.
+	--- Example: If `map['ф'] = 'a'`, this option adds:
+	---   - `<C-ф>` -> `<C-a>`
+	---   - `<A-ф>` -> `<A-a>`
+	---   - `<S-ф>` -> `<S-a>` (which often results in the uppercase letter 'A')
+	---   - `<C-S-ф>` -> `<C-S-a>` (often `<C-A>`), etc.
+	--- This can create a large number of mappings and covers many plugin and native Vim shortcuts.
+	AUTO_MODIFIERS = "auto_modifiers",
+
+	--- Automatically duplicates all generated mappings (including those from `AUTOCAPITAL`
+	--- and `AUTO_MODIFIERS`) to also work in Visual mode (`v`, `V`, ``).
+	--- Useful if you want your custom keys (e.g., `фд` for left-right movement) to work
+	--- consistently across Normal and Visual modes.
+	--- Requires the layout's `vim_mode` to be set appropriately (e.g., to "n") initially.
+	AUTO_VISUAL_DUPLICATE = "auto_visual_duplicate",
+
+	--- Similar to `AUTO_VISUAL_DUPLICATE`, but targets Insert Normal mode (`i` mode).
+	--- Allows using mapped keys to execute Normal mode commands directly from Insert mode.
+	--- Use with caution as it might interfere with typing literal characters.
+	AUTO_INSERT_NORMAL_DUPLICATE = "auto_insert_normal_duplicate",
+
+	--- Automatically handles the mapping of shifted special characters.
+	--- Example: If `map['.'] = ';'`, this option would add `map['>'] = ':'`,
+	--- because `>` is Shift+`.` and `:` is Shift+`;` on a standard QWERTY layout.
+	--- This is particularly useful for punctuation and symbols accessed via Shift.
+	AUTO_SHIFT_SPECIALS = "auto_shift_specials",
+
+	--- Automatically generates mappings for number keys (0-9) if they are present
+	--- in the base `layout.map`. For instance, if `map['='] = '0'` (on Russian layout),
+	--- this could ensure Shift+`=` (which is `+`) maps to Shift+`0` (which is `)`).
+	AUTO_NUMBERS = "auto_numbers",
+
+	--- Automatically creates mappings for common whitespace and control characters
+	--- like Space, Enter (`<CR>`), Tab (`<Tab>`), and Backspace (`<BS>`)
+	--- if their base characters are included in the initial map.
+	AUTO_WHITESPACE = "auto_whitespace",
+
+	--- Automatically maps common bracket pairs (parentheses, square brackets, curly braces)
+	--- based on the base map. Example: if `map['х'] = '['` and `map['ъ'] = ']'`, it ensures
+	--- Shifted versions `Х` -> `{` and `Ъ` -> `}` are also mapped.
+	AUTO_BRACKETS = "auto_brackets",
+}
 
 ---@class Layout
 ---@field name string
 ---@field active boolean
 ---@field vim_mode string
----@field auto_capital_duplication boolean
+---@field form_map_options table<FormMapOptions>|table<string, string>|string
 ---@field layout_name string
 ---@field map table<string, string>
+---@field ns_id number|nil
 ---@field _on_error fun(msg: string)
 local M = {}
 
@@ -18,7 +75,7 @@ local _default = {
 	name = "",
 	active = true,
 	vim_mode = "n",
-	auto_capital_duplication = true,
+	form_map_options = {},
 	layout_name = "qwerty",
 	map = {},
 	_on_error = function(_) end,
@@ -30,7 +87,7 @@ function M.new()
 	self.name = _default.name
 	self.active = _default.active
 	self.vim_mode = _default.vim_mode
-	self.auto_capital_duplication = _default.auto_capital_duplication
+	self.form_map_options = _default.form_map_options
 	self.layout_name = _default.layout_name
 	self.map = vim.deepcopy(_default.map)
 	self._on_error = _default._on_error
@@ -92,20 +149,6 @@ function M:setLayoutName(layout_name)
 	return true
 end
 
----@param active boolean
----@return boolean
-function M:setAutoCapical(active)
-	if type(active) ~= "boolean" then
-		self._on_error(
-			"[Layout] [setAutoCapical] | 'active' field is not a boolean"
-		)
-		return false
-	end
-
-	self.auto_capital_duplication = active
-	return true
-end
-
 ---@param func function(string)
 ---@return boolean
 function M:setOnError(func)
@@ -132,9 +175,241 @@ function M:setMap(map)
 	return true
 end
 
+---@param form_map_options table<string, string>|table<FormMapOptions>
 ---@return boolean
-function M:formMap()
+function M:setFormMapOptions(form_map_options)
+	if
+		type(form_map_options) ~= "table"
+		or type(form_map_options) ~= "string"
+	then
+		self._on_error("[Layout] [setMap] | 'map' argument is not a table")
+		return false
+	end
+
+	self.form_map_options = form_map_options
 	return true
 end
 
+---@return boolean
+function M:formMap()
+	local opts = self.form_map_options or _default.form_map_options
+	local all_opts_except_all = {}
+	for _, v in pairs(FormMapOptions) do
+		if v ~= FormMapOptions.ALL then
+			table.insert(all_opts_except_all, v)
+		end
+	end
+
+	if vim.tbl_contains(opts, FormMapOptions.ALL) then
+		opts = all_opts_except_all
+	else
+		local filtered_opts = {}
+		for _, v in ipairs(opts) do
+			if v ~= FormMapOptions.ALL then
+				table.insert(filtered_opts, v)
+			end
+		end
+		opts = filtered_opts
+	end
+
+	local FormMapOptionsFunctions = self:_optionMap()
+	local accumulated_map = vim.deepcopy(self.map or {})
+
+	for _, option in ipairs(opts) do
+		local func = FormMapOptionsFunctions[option]
+		if type(func) == "function" then
+			accumulated_map = func(self, accumulated_map)
+			if type(accumulated_map) ~= "table" then
+				return false
+			end
+		end
+	end
+
+	self.map = accumulated_map
+	return true
+end
+
+---@private
+function M:_optionMap()
+	local optsMap = {}
+	optsMap[FormMapOptions.ALL] = function(map)
+		return map
+	end
+	optsMap[FormMapOptions.AUTOCAPITAL] = self.autocapital
+	optsMap[FormMapOptions.AUTO_MODIFIERS] = self.autoModifiers
+	optsMap[FormMapOptions.AUTO_VISUAL_DUPLICATE] = self.autoVisualDuplicate
+	optsMap[FormMapOptions.AUTO_INSERT_NORMAL_DUPLICATE] =
+		self.autoInsertNormalDuplicate
+	optsMap[FormMapOptions.AUTO_SHIFT_SPECIALS] = self.autoShiftSpecials
+	optsMap[FormMapOptions.AUTO_NUMBERS] = self.autoNumbers
+	optsMap[FormMapOptions.AUTO_WHITESPACE] = self.autoWhitespace
+	optsMap[FormMapOptions.AUTO_BRACKETS] = self.autoBrackets
+	return optsMap
+end
+
+---@param map table<string, string>
+---@return table<string,string>
+function M.autocapital(map)
+	local res = vim.deepcopy(map)
+	for phys_lower, en_lower in pairs(map) do
+		if phys_lower:match("^%l$") and en_lower:match("^%l$") then
+			local phys_upper = phys_lower:upper()
+			local en_upper = en_lower:upper()
+			res[phys_upper] = en_upper
+		end
+	end
+	return res
+end
+
+---@param map table<string, string>
+---@return table<string,string>
+function M.autoModifiers(map)
+	local res = vim.deepcopy(map)
+	local modifiers = { "C", "A", "S" }
+	for phys_char, en_char in pairs(map) do
+		for _, mod1 in ipairs(modifiers) do
+			local lhs = "<" .. mod1 .. "-" .. phys_char .. ">"
+			local rhs = "<" .. mod1 .. "-" .. en_char .. ">"
+			res[lhs] = rhs
+
+			for _, mod2 in ipairs(modifiers) do
+				if mod1 ~= mod2 then
+					local sorted_mods = { mod1, mod2 }
+					table.sort(sorted_mods)
+					local combo_lhs = "<"
+						.. table.concat(sorted_mods, "-")
+						.. "-"
+						.. phys_char
+						.. ">"
+					local combo_rhs = "<"
+						.. table.concat(sorted_mods, "-")
+						.. "-"
+						.. en_char
+						.. ">"
+					res[combo_lhs] = combo_rhs
+				end
+			end
+		end
+	end
+	return res
+end
+
+---@param map table<string, string>
+---@return table<string,string>
+function M.autoVisualDuplicate(map)
+	local res = vim.deepcopy(map)
+	return res
+end
+
+---@param map table<string, string>
+---@return table<string,string>
+function M.autoInsertNormalDuplicate(map)
+	local res = vim.deepcopy(map)
+	return res
+end
+
+---@param map table<string, string>
+---@return table<string,string>
+function M.autoShiftSpecials(map)
+	local res = vim.deepcopy(map)
+	local shift_map = {
+		["1"] = "!",
+		["2"] = "@",
+		["3"] = "#",
+		["4"] = "$",
+		["5"] = "%",
+		["6"] = "^",
+		["7"] = "&",
+		["8"] = "*",
+		["9"] = "(",
+		["0"] = ")",
+		["-"] = "_",
+		["="] = "+",
+		["["] = "{",
+		["]"] = "}",
+		["\\"] = "|",
+		[";"] = ":",
+		["'"] = '"',
+		[","] = "<",
+		["."] = ">",
+		["/"] = "?",
+		["`"] = "~",
+	}
+	for phys_char, en_char in pairs(map) do
+		local phys_shifted = shift_map[phys_char]
+		local en_shifted = shift_map[en_char]
+		if phys_shifted and en_shifted then
+			res[phys_shifted] = en_shifted
+		end
+	end
+	return res
+end
+
+---@param map table<string, string>
+---@return table<string,string>
+function M.autoNumbers(map)
+	local res = vim.deepcopy(map)
+	local num_shift_map = {
+		["1"] = "!",
+		["2"] = "@",
+		["3"] = "#",
+		["4"] = "$",
+		["5"] = "%",
+		["6"] = "^",
+		["7"] = "&",
+		["8"] = "*",
+		["9"] = "(",
+		["0"] = ")",
+	}
+	for phys_char, en_char in pairs(map) do
+		local phys_shifted = num_shift_map[phys_char]
+		local en_shifted = num_shift_map[en_char]
+		if phys_shifted and en_shifted then
+			res[phys_shifted] = en_shifted
+		end
+	end
+	return res
+end
+
+---@param map table<string, string>
+---@return table<string,string>
+function M.autoWhitespace(map)
+	return vim.deepcopy(map)
+end
+
+---@param map table<string, string>
+---@return table<string,string>
+function M.autoBrackets(map)
+	local res = vim.deepcopy(map)
+	local bracket_pairs = {
+		{ p_open = "[", p_close = "]", e_open = "[", e_close = "]" },
+		{ p_open = "(", p_close = ")", e_open = "(", e_close = ")" },
+		{ p_open = "{", p_close = "}", e_open = "{", e_close = "}" },
+		{ p_open = "<", p_close = ">", e_open = "<", e_close = ">" },
+	}
+	for _, bp in ipairs(bracket_pairs) do
+		if map[bp.p_open] == bp.e_open and map[bp.p_close] == bp.e_close then
+			res[bp.p_open:upper()] = bp.e_open:upper()
+			res[bp.p_close:upper()] = bp.e_close:upper()
+		end
+	end
+	return res
+end
+
+---@return number|nil
+function M:getNsIdMappings()
+	return self._ns_id_mappings
+end
+
+---@param ns_id number|nil
+function M:setNsIdMappings(ns_id)
+	if type(ns_id) ~= "number" and ns_id ~= nil then
+		self._on_error(
+			"[Layout] [setNsIdMappings] | 'ns_id' field is not a number or nil"
+		)
+		return false
+	end
+	self._ns_id_mappings = ns_id
+	return true
+end
 return M

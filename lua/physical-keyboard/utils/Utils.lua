@@ -1,5 +1,35 @@
 local c = require("physical-keyboard.const.Constants")
 
+---@generic T
+---@param original T
+---@param copies table?
+---@return T
+local function deepcopy(original, copies)
+	copies = copies or {}
+
+	if type(original) ~= "table" then
+		return original
+	end
+
+	if copies[original] then
+		return copies[original]
+	end
+
+	local copy = {}
+	copies[original] = copy
+
+	for key, value in pairs(original) do
+		copy[deepcopy(key, copies)] = deepcopy(value, copies)
+	end
+
+	local mt = getmetatable(original)
+	if mt then
+		setmetatable(copy, deepcopy(mt, copies))
+	end
+
+	return copy
+end
+
 --- Must check for <C-...> commands too
 ---@param char string
 local function physicalCharTranslation(char)
@@ -108,6 +138,26 @@ local function tableValues(t)
 end
 
 ---@generic T
+---@param t1 T
+---@param t2 T
+---@return T
+local function tableMerge(t1, t2)
+	if type(t1) ~= "table" or type(t2) ~= "table" then
+		return t1
+	end
+
+	local res = deepcopy(t1)
+	for k, v in pairs(t2) do
+		if type(v) == "table" and type("table") then
+			res[k] = tableMerge(res[k], v)
+		else
+			res[k] = v
+		end
+	end
+	return res
+end
+
+---@generic T
 ---@param list T[]
 ---@param i integer? Start index (default: 1)
 ---@param j integer? End index (default: #list)
@@ -141,39 +191,10 @@ local function tableEraseFirst(list, value)
 	return false
 end
 
----@generic T
----@param original T
----@param copies table?
----@return T
-local function deepcopy(original, copies)
-	copies = copies or {}
-
-	if type(original) ~= "table" then
-		return original
-	end
-
-	if copies[original] then
-		return copies[original]
-	end
-
-	local copy = {}
-	copies[original] = copy
-
-	for key, value in pairs(original) do
-		copy[deepcopy(key, copies)] = deepcopy(value, copies)
-	end
-
-	local mt = getmetatable(original)
-	if mt then
-		setmetatable(copy, deepcopy(mt, copies))
-	end
-
-	return copy
-end
-
 return {
 	deepcopy = deepcopy,
 	tableValues = tableValues,
+	tableMerge = tableMerge,
 	isInTable = isInTable,
 	tableUnpack = tableUnpack,
 	tableEraseFirst = tableEraseFirst,

@@ -5,7 +5,7 @@ local ru_en = Layout.new()
 
 ru_en:setName("ru-en")
 ru_en:setActive(true)
-ru_en:setAutoCapical(true)
+ru_en:set
 ru_en:setLayoutName("qwerty")
 ru_en:setVimMode("n")
 ru_en:setOnError(function(message)
