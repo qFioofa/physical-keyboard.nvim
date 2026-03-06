@@ -5,6 +5,8 @@ local EchoLayoutMode = EchoLayoutModule.Mode
 local LayoutHandler = require("physical-keyboard.layout.LayoutHandler")
 local Opts = require("physical-keyboard.Opts")
 local defaultLayouts = require("physical-keyboard.const.DefaultLayouts")
+
+local c = require("physical-keyboard.const.Constants")
 local g = require("physical-keyboard.const.Globals")
 local u = require("physical-keyboard.utils.Utils")
 
@@ -17,9 +19,25 @@ local GEchoLayout = EchoLayout.new(g.VimNotify)
 local function registerCommands()
 	local commands = {
 		-- General commands
+		-- Shows info
 		{
 			c = "PhyKeyboard",
-			f = function() end,
+			f = function(_)
+				local lines = { "=== Physical Keyboard ===" }
+
+				table.insert(
+					lines,
+					string.format(
+						"Auther: %s\nGithub: %s\nVersion: %s",
+						c.PluginAuther,
+						c.PluginGitLink,
+						c.Version
+					)
+				)
+
+				local message = table.concat(lines, "\n")
+				g.VimNotify:i(message, "f")
+			end,
 			o = {
 				desc = "Show general information about plugin",
 				nargs = 0,
@@ -28,46 +46,54 @@ local function registerCommands()
 		{
 			c = "PhyKeyboardStatus",
 			f = function(_)
-				local registered = GLayoutHandler:getRegistedLayouts()
+				local registered = GLayoutHandler:getRegistedLayouts() or {}
 				local active_map = GLayoutHandler:getActiveLayouts() or {}
 
 				local lines = { "=== Physical Keyboard Status ===" }
-
-				-- Section 1: Active Layouts
-				table.insert(lines, "\n[ Active Layouts ]")
-				local has_active = false
-				for name, is_active in pairs(active_map) do
-					if is_active then
-						table.insert(lines, string.format("  ✓ %s", name))
-						has_active = true
-					end
-				end
-				if not has_active then
-					table.insert(lines, "  (none)")
-				end
-
-				-- Section 2: All Registered Layouts
-				table.insert(lines, "\n[ Registered Layouts ]")
-				if #registered == 0 then
-					table.insert(lines, "  (none)")
+				local messageNotifications = "Notifications: "
+				if g.VimNotify.enabled == true then
+					messageNotifications = messageNotifications .. "enabled"
 				else
-					for _, name in ipairs(registered) do
-						local status = active_map[name] and "✓" or "o"
+					messageNotifications = messageNotifications .. "disabled"
+				end
+
+				table.insert(lines, messageNotifications)
+				if #registered == 0 then
+					table.insert(lines, "\nNo layouts registered.")
+				else
+					table.insert(lines, "")
+
+					local max_num = #registered
+					local width = tostring(max_num):len()
+
+					for i, name in ipairs(registered) do
+						local is_active = active_map[name] == true
+						local status_sym = is_active and "✓" or "o"
+						local status_text = is_active and "ACTIVE "
+							or "inactive"
+
 						table.insert(
 							lines,
-							string.format("  [%s] %s", status, name)
+							string.format(
+								"  %-" .. width .. "d. [%s] %s (%s)",
+								i,
+								status_sym,
+								name,
+								status_text
+							)
 						)
 					end
 				end
 
 				local message = table.concat(lines, "\n")
-				g.VimNotify:i(message)
+				g.VimNotify:i(message, "f")
 			end,
 			o = {
-				desc = "Show state of the plugin",
+				desc = "Show status of registered layouts",
 				nargs = 0,
 			},
 		},
+		-- On/off plugin
 		{
 			c = "PhyKeyboardEnable",
 			f = function(_)
@@ -88,6 +114,7 @@ local function registerCommands()
 				nargs = 0,
 			},
 		},
+		-- Layout control
 		{
 			c = "PhyKeyboardEnableLayout",
 			f = function(opts)
@@ -175,7 +202,8 @@ local function registerCommands()
 					return {}
 				end,
 			},
-		}, -- Test section
+		},
+		-- Test section
 		-- test: char -> translated char
 		{
 			c = "PhyKeyboardTest",
@@ -256,6 +284,37 @@ local function registerCommands()
 				end,
 			},
 		},
+		{
+			c = "PhyKeyboardNotify",
+			f = function(opts)
+				local arg = opts.fargs and opts.fargs[1] or nil
+
+				local message = "Notifications: "
+				arg = u.toBoolean(arg)
+				if arg == true then
+					g.VimNotify.enabled = true
+				elseif arg == false then
+					g.VimNotify.enabled = false
+				else
+					g.VimNotify.enabled = not g.VimNotify.enabled
+				end
+
+				if g.VimNotify.enabled == true then
+					message = message .. "enabled"
+				else
+					message = message .. "disabled"
+				end
+
+				g.VimNotify:i(message, "f")
+			end,
+			o = {
+				desc = "Toggle notifications",
+				nargs = "?",
+				complete = function(_, _, _)
+					return { "on", "off" }
+				end,
+			},
+		},
 	}
 
 	for _, command in ipairs(commands) do
@@ -284,11 +343,19 @@ function M.setup(opts)
 	registerCommands()
 
 	local userLayouts = {}
-	if type(opts.userLayouts) == table then
+	if type(opts.userLayouts) == "table" then
 		userLayouts = opts.layouts
 	end
 
 	layoutRegister(u.tableUnpack(defaultLayouts), u.tableUnpack(userLayouts))
+
+	if type(configOpts.active_layouts) == "string" then
+		GLayoutHandler:enableLayout(configOpts.active_layouts)
+	elseif type(configOpts.active_layouts) == "table" then
+		for _, layoutName in ipairs(configOpts.active_layouts) do
+			GLayoutHandler:enableLayout(layoutName)
+		end
+	end
 end
 
 return M

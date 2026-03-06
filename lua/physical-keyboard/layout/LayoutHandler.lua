@@ -3,7 +3,8 @@ local u = require("physical-keyboard.utils.Utils")
 
 ---@class LayoutHandler
 ---@field _active_plugin boolean
----@field _active_layouts table<string, boolean>
+---@field _active_layouts table<string>
+---@field _active_layouts_plugin_save table<string>
 ---@field _layouts table<string, Layout>
 ---@field _layout_list string[]
 ---@field _vimMessageInstance VimMessage
@@ -14,6 +15,7 @@ M.__index = M
 local _default = {
 	_active_plugin = true,
 	_active_layouts = {},
+	_active_layouts_plugin_save = {},
 	_layouts = {},
 	_layout_list = {},
 
@@ -22,38 +24,78 @@ local _default = {
 
 ---@param vimMessageInstance VimMessage
 function M.new(vimMessageInstance)
-	local self = setmetatable(_default, M)
+	local self = setmetatable({}, M)
+	self._active_plugin = _default._active_plugin
+	self._active_layouts = _default._active_layouts
+	self._active_layouts_plugin_save = _default._active_layouts_plugin_save
+	self._layouts = _default._layouts
+	self._layout_list = _default._layout_list
 	self._vimMessageInstance = vimMessageInstance
 	return self
 end
 
 ---@return nil
 function M:activePlugin()
-	if self._active_plugin then
+	if self._active_plugin == true then
+		pcall(function()
+			self._vimMessageInstance:i("Plugin: already enabled")
+		end)
 		return
 	end
 
+	pcall(function()
+		self._vimMessageInstance:i("Plugin: enabled")
+	end)
+
 	self._active_plugin = true
-	for _, layoutName in ipairs(self._active_layouts) do
+	for _, layoutName in ipairs(self._active_layouts_plugin_save) do
 		self:_activateLayout(layoutName)
 	end
 end
 
 ---@return nil
 function M:disablePlugin()
-	if not self._active_plugin then
+	if self._active_plugin == false then
+		pcall(function()
+			self._vimMessageInstance:i("Plugin: already disabled")
+		end)
 		return
 	end
 
+	pcall(function()
+		self._vimMessageInstance:i("Plugin: disabled")
+	end)
+
 	self._active_plugin = false
+	local _save_active_layouts = u.deepcopy(self._active_layouts)
 	for _, layoutName in ipairs(self._active_layouts) do
 		self:_cleanLayout(layoutName)
 	end
+	self._active_layouts_plugin_save = _save_active_layouts
+end
+
+---@private
+---@return boolean
+function M:_isEnable()
+	if self._active_plugin == false then
+		pcall(function()
+			self._vimMessageInstance:i(
+				"Can't set layout status\nPlugin is disabled\nUse: <PhyKeyboardEnable> to enable it"
+			)
+		end)
+		return false
+	end
+
+	return true
 end
 
 ---@param layout Layout
 ---@return boolean
 function M:registerLayout(layout)
+	if not self:_isEnable() then
+		return false
+	end
+
 	local newLayout = Layout.new()
 	local name = layout.name
 
@@ -67,6 +109,7 @@ function M:registerLayout(layout)
 	---
 	local setVarsTable = {
 		name and name ~= "",
+		newLayout:setName(name),
 		newLayout:setActive(layout.active),
 		newLayout:setVimMode(layout.vim_mode),
 		newLayout:setLayoutName(layout.layout_name),
@@ -112,6 +155,7 @@ function M:registerLayout(layout)
 	end
 
 	self._layouts[name] = newLayout
+	table.insert(self._layout_list, name)
 	return true
 end
 
@@ -119,6 +163,10 @@ end
 ---@param isActive boolean
 ---@return boolean
 function M:setActiveLayout(layoutName, isActive)
+	if not self:_isEnable() then
+		return false
+	end
+
 	if not self:_isLayoutRegisted(layoutName) then
 		return false
 	end
@@ -131,12 +179,19 @@ function M:setActiveLayout(layoutName, isActive)
 			return false
 		end
 
+		if not self:_activateLayout(layoutName) then
+			return false
+		end
+
 		table.insert(self._active_layouts, layoutName)
-		self:_activateLayout(layoutName)
 		return true
 	elseif isActive == false then
+		if not self:_cleanLayout(layoutName) then
+			return false
+		end
+
 		u.tableEraseFirst(self._active_layouts, layoutName)
-		self:_cleanLayout(layoutName)
+		return true
 	end
 
 	return false
@@ -192,20 +247,34 @@ end
 
 ---@private
 ---@param layoutName string
----@return nil
-function M:_cleanLayout(layoutName)
+---@return boolean
+function M:_activateLayout(layoutName)
 	if not u.isInTable(self._layout_list, layoutName) then
-		return
+		return false
 	end
+
+	pcall(function()
+		self._vimMessageInstance:i("✓ Layout: " .. layoutName .. " activated")
+	end)
+
+	return true
 end
 
 ---@private
 ---@param layoutName string
----@return nil
-function M:_activateLayout(layoutName)
+---@return boolean
+function M:_cleanLayout(layoutName)
 	if not u.isInTable(self._layout_list, layoutName) then
-		return
+		return false
 	end
+
+	pcall(function()
+		self._vimMessageInstance:i(
+			"✓ Layout: " .. layoutName .. " deactivated"
+		)
+	end)
+
+	return true
 end
 
 return M

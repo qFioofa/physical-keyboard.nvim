@@ -1,5 +1,8 @@
 return {
 	PluginTitle = "Physical keyboard",
+	PluginAuther = "qFioofa",
+	PluginGitLink = "https://github.com/qFioofa/physical-keyboard.nvim",
+	Version = "0.0.1",
 	special_keys = {
 		"<Nul>",
 		"<BS>",
