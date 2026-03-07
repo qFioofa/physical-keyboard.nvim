@@ -187,6 +187,7 @@ function M:_format_debug(char)
 	for i = 1, #char do
 		table.insert(bytes, string.byte(char, i))
 	end
+
 	local cp = utf8 and utf8.codepoint(char) or string.byte(char, 1)
 	return string.format(
 		"Key: '%s' | Bytes: [%s] | Code: %d | Len: %d",
@@ -224,7 +225,13 @@ function M:_display_key(char)
 		formatted = char
 	end
 
-	self._vimMessageInstance:i("[Echo Keyboard] " .. formatted)
+	self._vimMessageInstance:i(
+		string.format(
+			"[Echo Keyboard]\nVim Mode: %s\n%s",
+			vim.api.nvim_get_mode().mode,
+			formatted
+		)
+	)
 end
 
 return {

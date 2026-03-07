@@ -5,9 +5,9 @@ local ru_en = Layout.new()
 
 ru_en:setName("ru-en")
 ru_en:setActive(true)
-ru_en:set
+ru_en:setFormMapOptions({ "auto_capital", "auto_modifiers" })
 ru_en:setLayoutName("qwerty")
-ru_en:setVimMode("n")
+ru_en:setVimMode("all")
 ru_en:setOnError(function(message)
 	g.VimNotify:e(message)
 end)

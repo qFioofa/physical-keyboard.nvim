@@ -347,7 +347,7 @@ function M.setup(opts)
 		userLayouts = opts.layouts
 	end
 
-	layoutRegister(u.tableUnpack(defaultLayouts), u.tableUnpack(userLayouts))
+	layoutRegister(u.table.unpack(defaultLayouts), u.table.unpack(userLayouts))
 
 	if type(configOpts.active_layouts) == "string" then
 		GLayoutHandler:enableLayout(configOpts.active_layouts)

@@ -146,15 +146,14 @@ local function tableMerge(t1, t2)
 		return t1
 	end
 
-	local res = deepcopy(t1)
 	for k, v in pairs(t2) do
 		if type(v) == "table" and type("table") then
-			res[k] = tableMerge(res[k], v)
+			t1[k] = tableMerge(t1[k], v)
 		else
-			res[k] = v
+			t1[k] = v
 		end
 	end
-	return res
+	return t1
 end
 
 ---@generic T
@@ -192,12 +191,14 @@ local function tableEraseFirst(list, value)
 end
 
 return {
+	table = {
+		values = tableValues,
+		merge = tableMerge,
+		unpack = tableUnpack,
+		is_in = isInTable,
+		erase_first = tableEraseFirst,
+	},
 	deepcopy = deepcopy,
-	tableValues = tableValues,
-	tableMerge = tableMerge,
-	isInTable = isInTable,
-	tableUnpack = tableUnpack,
-	tableEraseFirst = tableEraseFirst,
 	toBoolean = toBoolean,
 	regCom = registerVimCommand,
 	toPhyCharTrans = physicalCharTranslation,

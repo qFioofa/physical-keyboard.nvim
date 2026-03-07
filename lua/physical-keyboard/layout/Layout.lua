@@ -24,18 +24,6 @@ local FormMapOptions = {
 	--- This can create a large number of mappings and covers many plugin and native Vim shortcuts.
 	AUTO_MODIFIERS = "auto_modifiers",
 
-	--- Automatically duplicates all generated mappings (including those from `AUTOCAPITAL`
-	--- and `AUTO_MODIFIERS`) to also work in Visual mode (`v`, `V`, ``).
-	--- Useful if you want your custom keys (e.g., `фд` for left-right movement) to work
-	--- consistently across Normal and Visual modes.
-	--- Requires the layout's `vim_mode` to be set appropriately (e.g., to "n") initially.
-	AUTO_VISUAL_DUPLICATE = "auto_visual_duplicate",
-
-	--- Similar to `AUTO_VISUAL_DUPLICATE`, but targets Insert Normal mode (`i` mode).
-	--- Allows using mapped keys to execute Normal mode commands directly from Insert mode.
-	--- Use with caution as it might interfere with typing literal characters.
-	AUTO_INSERT_NORMAL_DUPLICATE = "auto_insert_normal_duplicate",
-
 	--- Automatically handles the mapping of shifted special characters.
 	--- Example: If `map['.'] = ';'`, this option would add `map['>'] = ':'`,
 	--- because `>` is Shift+`.` and `:` is Shift+`;` on a standard QWERTY layout.
@@ -61,7 +49,7 @@ local FormMapOptions = {
 ---@class Layout
 ---@field name string
 ---@field active boolean
----@field vim_mode string
+---@field vim_mode table<VimMod>
 ---@field form_map_options table<FormMapOptions>|table<string, string>|string
 ---@field layout_name string
 ---@field map table<string, string>
@@ -74,7 +62,7 @@ M.__index = M
 local _default = {
 	name = "",
 	active = true,
-	vim_mode = "n",
+	vim_mode = { "n" },
 	form_map_options = {},
 	layout_name = "qwerty",
 	map = {},
@@ -118,17 +106,30 @@ function M:setName(name)
 	return true
 end
 
----@param mode string
+---@param mode string|table<string>
 ---@return boolean
 function M:setVimMode(mode)
-	if not isValidVimMode(mode) then
-		local modes_string = table.concat(VimModsModule.VimMods, " ")
+	if
+		mode == "all" or (type(mode) == "table" and u.table.is_in(mode, "all"))
+	then
+		self.vim_mode = u.deepcopy(u.table.values(VimMods))
+		return true
+	end
 
-		self._on_error(
-			"[Layout] [setVimMode] | wrong vim mode.\nUse one of: "
-				.. modes_string
-		)
-		return false
+	if type(mode) == "string" then
+		mode = { mode }
+	end
+
+	for _, expectedMode in ipairs(mode) do
+		if not isValidVimMode(expectedMode) then
+			local modes_string = table.concat(VimModsModule.VimMods, " ")
+
+			self._on_error(
+				"[Layout] [setVimMode] | wrong vim mode.\nUse one of: "
+					.. modes_string
+			)
+			return false
+		end
 	end
 
 	self.vim_mode = mode
@@ -175,14 +176,16 @@ function M:setMap(map)
 	return true
 end
 
----@param form_map_options table<string, string>|table<FormMapOptions>
+---@param form_map_options table<string, string>|table<FormMapOptions>|string
 ---@return boolean
 function M:setFormMapOptions(form_map_options)
 	if
 		type(form_map_options) ~= "table"
-		or type(form_map_options) ~= "string"
+		and type(form_map_options) ~= "string"
 	then
-		self._on_error("[Layout] [setMap] | 'map' argument is not a table")
+		self._on_error(
+			"[Layout] [setMap] | 'map' argument is not a table or string"
+		)
 		return false
 	end
 
@@ -193,53 +196,42 @@ end
 ---@return boolean
 function M:formMap()
 	local opts = self.form_map_options or _default.form_map_options
-	local all_opts_except_all = {}
-	for _, v in pairs(FormMapOptions) do
-		if v ~= FormMapOptions.ALL then
-			table.insert(all_opts_except_all, v)
+
+	if type(opts) == "string" then
+		if opts == FormMapOptions.ALL then
+			opts = u.deepcopy(FormMapOptions)
+		else
+			opts = { opts }
+		end
+	elseif type(opts) == "table" then
+		if u.table.is_in(opts, FormMapOptions.ALL) then
+			opts = u.deepcopy(FormMapOptions)
 		end
 	end
 
-	if vim.tbl_contains(opts, FormMapOptions.ALL) then
-		opts = all_opts_except_all
-	else
-		local filtered_opts = {}
-		for _, v in ipairs(opts) do
-			if v ~= FormMapOptions.ALL then
-				table.insert(filtered_opts, v)
-			end
-		end
-		opts = filtered_opts
-	end
-
-	local FormMapOptionsFunctions = self:_optionMap()
-	local accumulated_map = vim.deepcopy(self.map or {})
-
+	local acc = {}
+	local formMapOptionsFunctions = self:_optionMap()
 	for _, option in ipairs(opts) do
-		local func = FormMapOptionsFunctions[option]
+		local func = formMapOptionsFunctions[option]
 		if type(func) == "function" then
-			accumulated_map = func(self, accumulated_map)
-			if type(accumulated_map) ~= "table" then
-				return false
-			end
+			local mapExtra = func(self.map)
+			u.table.merge(acc, mapExtra)
 		end
 	end
 
-	self.map = accumulated_map
+	u.table.merge(acc, self.map)
+	self.map = acc
 	return true
 end
 
 ---@private
 function M:_optionMap()
 	local optsMap = {}
-	optsMap[FormMapOptions.ALL] = function(map)
-		return map
+	optsMap[FormMapOptions.ALL] = function(_)
+		return {}
 	end
 	optsMap[FormMapOptions.AUTOCAPITAL] = self.autocapital
 	optsMap[FormMapOptions.AUTO_MODIFIERS] = self.autoModifiers
-	optsMap[FormMapOptions.AUTO_VISUAL_DUPLICATE] = self.autoVisualDuplicate
-	optsMap[FormMapOptions.AUTO_INSERT_NORMAL_DUPLICATE] =
-		self.autoInsertNormalDuplicate
 	optsMap[FormMapOptions.AUTO_SHIFT_SPECIALS] = self.autoShiftSpecials
 	optsMap[FormMapOptions.AUTO_NUMBERS] = self.autoNumbers
 	optsMap[FormMapOptions.AUTO_WHITESPACE] = self.autoWhitespace
@@ -251,6 +243,7 @@ end
 ---@return table<string,string>
 function M.autocapital(map)
 	local res = vim.deepcopy(map)
+
 	for phys_lower, en_lower in pairs(map) do
 		if phys_lower:match("^%l$") and en_lower:match("^%l$") then
 			local phys_upper = phys_lower:upper()
@@ -412,4 +405,5 @@ function M:setNsIdMappings(ns_id)
 	self._ns_id_mappings = ns_id
 	return true
 end
+
 return M

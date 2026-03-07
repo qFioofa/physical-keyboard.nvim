@@ -113,9 +113,9 @@ function M:registerLayout(layout)
 		newLayout:setActive(layout.active),
 		newLayout:setVimMode(layout.vim_mode),
 		newLayout:setLayoutName(layout.layout_name),
+		newLayout:setFormMapOptions(layout.form_map_options),
 		newLayout:setMap(layout.map),
 
-		newLayout:setAutoCapical(layout.auto_capital_duplication),
 		newLayout:setOnError(self._on_error),
 
 		-- layout.active ~= nil or newLayout:setActive(layout.active),
@@ -129,7 +129,7 @@ function M:registerLayout(layout)
 		-- layout._on_error ~= nil or newLayout:setOnError(self._on_error),
 	}
 
-	if u.isInTable(setVarsTable, false) then
+	if u.table.is_in(setVarsTable, false) then
 		pcall(function()
 			self._vimMessageInstance:w(
 				"[registerLayout] | layout with name: '"
@@ -172,7 +172,7 @@ function M:setActiveLayout(layoutName, isActive)
 	end
 
 	if isActive == true then
-		if u.isInTable(self._active_layouts, layoutName) then
+		if u.table.is_in(self._active_layouts, layoutName) then
 			self._vimMessageInstance:i(
 				"Layout with name '" .. layoutName .. "' already activated"
 			)
@@ -190,7 +190,7 @@ function M:setActiveLayout(layoutName, isActive)
 			return false
 		end
 
-		u.tableEraseFirst(self._active_layouts, layoutName)
+		u.table.erase_first(self._active_layouts, layoutName)
 		return true
 	end
 
@@ -232,7 +232,7 @@ end
 ---@param layoutName string
 ---@return boolean
 function M:_isLayoutRegisted(layoutName)
-	if not u.isInTable(self._layout_list, layoutName) then
+	if not u.table.is_in(self._layout_list, layoutName) then
 		pcall(function()
 			self._vimMessageInstance:w(
 				"[enableLayout] | layout with name: '"
@@ -246,7 +246,7 @@ function M:_isLayoutRegisted(layoutName)
 end
 
 function M:_activateLayout(layoutName)
-	if not u.isInTable(self._layout_list, layoutName) then
+	if not u.table.is_in(self._layout_list, layoutName) then
 		return false
 	end
 
@@ -267,20 +267,22 @@ function M:_activateLayout(layoutName)
 			type(original_char) == "string"
 			and type(translated_char) == "string"
 		then
-			vim.api.nvim_buf_set_keymap(
-				0,
-				layout.vim_mode,
-				original_char,
-				translated_char,
-				{
-					noremap = false,
-					silent = true,
-					nowait = false,
-					expr = false,
-					unique = false,
-					desc = "PKB_Translation_" .. layoutName,
-				}
-			)
+			for _, vim_mode in pairs(layout.vim_mode) do
+				vim.api.nvim_buf_set_keymap(
+					0,
+					vim_mode,
+					original_char,
+					translated_char,
+					{
+						noremap = false,
+						silent = true,
+						nowait = false,
+						expr = false,
+						unique = false,
+						desc = "PKB_Translation_" .. layoutName,
+					}
+				)
+			end
 		end
 	end
 
@@ -294,7 +296,7 @@ function M:_activateLayout(layoutName)
 end
 
 function M:_cleanLayout(layoutName)
-	if not u.isInTable(self._layout_list, layoutName) then
+	if not u.table.is_in(self._layout_list, layoutName) then
 		return false
 	end
 
@@ -310,11 +312,13 @@ function M:_cleanLayout(layoutName)
 		for original_char, _ in pairs(layout.map) do
 			if type(original_char) == "string" then
 				pcall(function()
-					vim.keymap.del(
-						layout.vim_mode,
-						original_char,
-						{ buffer = 0, nsid = ns_id }
-					)
+					for _, vim_mode in ipairs(layout.vim_mode) do
+						vim.keymap.del(
+							vim_mode,
+							original_char,
+							{ buffer = 0, nsid = ns_id }
+						)
+					end
 				end)
 			end
 		end
