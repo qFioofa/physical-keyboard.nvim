@@ -245,6 +245,7 @@ function M:_isLayoutRegisted(layoutName)
 	return true
 end
 
+---@return boolean
 function M:_activateLayout(layoutName)
 	if not u.table.is_in(self._layout_list, layoutName) then
 		return false
@@ -269,7 +270,7 @@ function M:_activateLayout(layoutName)
 		then
 			for _, vim_mode in pairs(layout.vim_mode) do
 				vim.api.nvim_buf_set_keymap(
-					0,
+					-1,
 					vim_mode,
 					original_char,
 					translated_char,
@@ -295,6 +296,7 @@ function M:_activateLayout(layoutName)
 	return true
 end
 
+---@return boolean
 function M:_cleanLayout(layoutName)
 	if not u.table.is_in(self._layout_list, layoutName) then
 		return false
