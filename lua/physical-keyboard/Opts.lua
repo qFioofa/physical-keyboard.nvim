@@ -1,35 +1,39 @@
 local defaultLayouts = require("physical-keyboard.const.DefaultLayouts")
 local u = require("physical-keyboard.utils.Utils")
 
+--- Configuration options for the Physical Keyboard plugin.
+--- Handles default values and merging with user-provided options.
 ---@class Opts
----@field enable boolean
----@field notify boolean
----@field active_layouts string|table<string>|any
----@field maps table<string, Layout>
+---@field enable boolean Enable or disable the plugin
+---@field notify boolean Enable or disable notifications
+---@field active_layouts string|string[] Layout(s) to activate on startup
+---@field userLayouts table<string, Layout> User-provided custom layouts
 local Opts = {}
 
 Opts.__index = Opts
 
+--- Default configuration values
 local _default = {
 	enable = true,
 	notify = true,
 	active_layouts = {},
-	maps = {},
+	userLayouts = {},
 }
 
+--- Creates a new Opts instance with default values.
+---@return Opts
 function Opts.new()
 	local self = setmetatable({}, Opts)
 	self.enable = _default.enable
 	self.notify = _default.notify
 	self.active_layouts = _default.active_layouts
-	self.maps = u.deepcopy(defaultLayouts)
+	self.userLayouts = u.deepcopy(defaultLayouts)
 	return self
 end
 
---- It's called 'soft' since we need to
---- replace default layout bind
---- with user's one (if user hits)
----@param otherOpts table
+--- Soft merges user options with defaults.
+--- Preserves default layouts unless explicitly overridden by user.
+---@param otherOpts table|nil User-provided configuration options
 function Opts:softClone(otherOpts)
 	if not otherOpts then
 		return
@@ -50,8 +54,12 @@ function Opts:softClone(otherOpts)
 		self.active_layouts = otherOpts.active_layouts
 	end
 
-	if type(otherOpts.maps) == "table" then
-		self.maps = otherOpts.maps
+	if type(otherOpts.userLayouts) == "table" then
+		-- Merge user layouts with defaults
+		---@diagnostic disable-next-line: assign-type-mismatch
+		for name, layout in pairs(otherOpts.userLayouts) do
+			self.userLayouts[name] = layout
+		end
 	end
 end
 

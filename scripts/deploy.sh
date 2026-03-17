@@ -5,7 +5,6 @@
 PLUGIN_NAME="physical-keyboard.nvim"
 TARGET_DIR="$HOME/.config/nvim/lazy/$PLUGIN_NAME"
 
-# Проверяем аргументы
 REMOVE_OLD=0
 for arg in "$@"; do
   if [ "$arg" = "-r" ]; then

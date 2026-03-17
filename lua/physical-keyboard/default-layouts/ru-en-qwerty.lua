@@ -1,6 +1,8 @@
 local Layout = require("physical-keyboard.layout.Layout")
 local g = require("physical-keyboard.const.Globals")
 
+--- Russian QWERTY to English QWERTY layout mapping
+---@type Layout
 local ru_en = Layout.new()
 
 ru_en:setName("ru-en")
@@ -45,7 +47,6 @@ ru_en:setMap({
 	["ь"] = "m",
 	["б"] = ",",
 	["ю"] = ".",
-	["."] = "/",
 })
 
 return ru_en

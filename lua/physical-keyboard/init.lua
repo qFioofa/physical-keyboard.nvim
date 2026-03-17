@@ -15,6 +15,7 @@ local M = {}
 local GLayoutHandler = LayoutHandler.new(g.VimNotify)
 local GEchoLayout = EchoLayout.new(g.VimNotify)
 
+--- Registers all plugin commands.
 ---@return nil
 local function registerCommands()
 	local commands = {
@@ -28,8 +29,8 @@ local function registerCommands()
 				table.insert(
 					lines,
 					string.format(
-						"Auther: %s\nGithub: %s\nVersion: %s",
-						c.PluginAuther,
+						"Author: %s\nGitHub: %s\nVersion: %s",
+						c.PluginAuthor,
 						c.PluginGitLink,
 						c.Version
 					)
@@ -39,7 +40,7 @@ local function registerCommands()
 				g.VimNotify:i(message, "f")
 			end,
 			o = {
-				desc = "Show general information about plugin",
+				desc = "Show general information about the plugin",
 				nargs = 0,
 			},
 		},
@@ -47,7 +48,13 @@ local function registerCommands()
 			c = "PhyKeyboardStatus",
 			f = function(_)
 				local registered = GLayoutHandler:getRegistedLayouts() or {}
-				local active_map = GLayoutHandler:getActiveLayouts() or {}
+				local active_layouts = GLayoutHandler:getActiveLayouts() or {}
+
+				-- Convert active_layouts array to a set for O(1) lookup
+				local active_set = {}
+				for _, name in ipairs(active_layouts) do
+					active_set[name] = true
+				end
 
 				local lines = { "=== Physical Keyboard Status ===" }
 				local messageNotifications = "Notifications: "
@@ -67,10 +74,9 @@ local function registerCommands()
 					local width = tostring(max_num):len()
 
 					for i, name in ipairs(registered) do
-						local is_active = active_map[name] == true
-						local status_sym = is_active and "✓" or "o"
-						local status_text = is_active and "ACTIVE "
-							or "inactive"
+						local is_active = active_set[name] == true
+						local status_sym = is_active and "✓" or "○"
+						local status_text = is_active and "ACTIVE" or "inactive"
 
 						table.insert(
 							lines,
@@ -100,7 +106,7 @@ local function registerCommands()
 				GLayoutHandler:activePlugin()
 			end,
 			o = {
-				desc = "Enables plugin",
+				desc = "Enable the physical keyboard plugin",
 				nargs = 0,
 			},
 		},
@@ -110,7 +116,7 @@ local function registerCommands()
 				GLayoutHandler:disablePlugin()
 			end,
 			o = {
-				desc = "Disables plugin",
+				desc = "Disable the physical keyboard plugin",
 				nargs = 0,
 			},
 		},
@@ -122,7 +128,7 @@ local function registerCommands()
 				GLayoutHandler:enableLayout(layoutName)
 			end,
 			o = {
-				desc = "Enables layout with given name",
+				desc = "Enable a layout by name",
 				nargs = 1,
 				complete = function(_, _, _)
 					return GLayoutHandler:getRegistedLayouts()
@@ -136,7 +142,7 @@ local function registerCommands()
 				GLayoutHandler:disableLayout(layoutName)
 			end,
 			o = {
-				desc = "Disables layout with given name",
+				desc = "Disable a layout by name",
 				nargs = 1,
 				complete = function(_, _, _)
 					return GLayoutHandler:getActiveLayouts()
@@ -162,7 +168,7 @@ local function registerCommands()
 				GLayoutHandler:setActiveLayout(layout_name, is_active)
 			end,
 			o = {
-				desc = "Sets 'layout name' into 'active' state",
+				desc = "Set a layout's active state",
 				nargs = "*",
 				complete = function(arg_lead, cmdline, cursor_pos)
 					local space_count = 0
@@ -226,7 +232,7 @@ local function registerCommands()
 				end
 			end,
 			o = {
-				desc = "Toggle keyboard echo functionality",
+				desc = "Toggle keyboard echo display",
 				nargs = "?",
 				complete = function(_, _, _)
 					return { "on", "off" }
@@ -241,7 +247,7 @@ local function registerCommands()
 				if not arg then
 					pcall(function()
 						GEchoLayout._vimMessageInstance:i(
-							"Current mode: " .. tostring(GEchoLayout._mode)
+							"Current echo mode: " .. tostring(GEchoLayout._mode)
 						)
 					end)
 					return
@@ -271,7 +277,7 @@ local function registerCommands()
 				end
 			end,
 			o = {
-				desc = "Set echo display mode (or show current if no args)",
+				desc = "Set or show echo display mode",
 				nargs = "?",
 				complete = function(_, _, _)
 					local modes = {}
@@ -308,7 +314,7 @@ local function registerCommands()
 				g.VimNotify:i(message, "f")
 			end,
 			o = {
-				desc = "Toggle notifications",
+				desc = "Toggle plugin notifications",
 				nargs = "?",
 				complete = function(_, _, _)
 					return { "on", "off" }
@@ -320,12 +326,14 @@ local function registerCommands()
 	for _, command in ipairs(commands) do
 		local success, error = u.regCom(command.c, command.f, command.o)
 		if not success then
-			g.VimNotify:i(error)
+			g.VimNotify:e("Failed to register command '" .. command.c .. "': " .. error)
 		end
 	end
 end
 
----@param ... Layout
+--- Registers layouts with the layout handler.
+---@param ... Layout Variadic list of layout objects to register
+---@return nil
 local function layoutRegister(...)
 	local layouts = { ... }
 	for _, layout in ipairs(layouts) do
@@ -333,7 +341,9 @@ local function layoutRegister(...)
 	end
 end
 
----@param opts table
+--- Initializes the plugin with user configuration.
+---@param opts table User configuration options
+---@return nil
 function M.setup(opts)
 	local configOpts = Opts.new()
 	configOpts:softClone(opts)
@@ -344,10 +354,16 @@ function M.setup(opts)
 
 	local userLayouts = {}
 	if type(opts.userLayouts) == "table" then
-		userLayouts = opts.layouts
+		userLayouts = opts.userLayouts
 	end
 
-	layoutRegister(u.table.unpack(defaultLayouts), u.table.unpack(userLayouts))
+	-- Convert userLayouts table to array for registration
+	local userLayoutsArray = {}
+	for _, layout in pairs(userLayouts) do
+		table.insert(userLayoutsArray, layout)
+	end
+
+	layoutRegister(u.table.unpack(defaultLayouts), u.table.unpack(userLayoutsArray))
 
 	if type(configOpts.active_layouts) == "string" then
 		GLayoutHandler:enableLayout(configOpts.active_layouts)

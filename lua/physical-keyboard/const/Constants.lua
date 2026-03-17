@@ -1,6 +1,17 @@
+--- Plugin constants and metadata
+---@class Constants
+---@field PluginTitle string
+---@field PluginAuthor string
+---@field PluginGitLink string
+---@field Version string
+---@field special_keys string[]
+---@field modifiers string[]
+---@field punctuation string[]
+---@field latin_letters string[]
+
 return {
-	PluginTitle = "Physical keyboard",
-	PluginAuther = "qFioofa",
+	PluginTitle = "Physical Keyboard",
+	PluginAuthor = "qFioofa",
 	PluginGitLink = "https://github.com/qFioofa/physical-keyboard.nvim",
 	Version = "0.0.1",
 	special_keys = {

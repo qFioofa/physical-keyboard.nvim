@@ -1,21 +1,21 @@
----@enum EchoKeyboardMode
-local EchoKeyboardMode = {
-	ALL = "all",
-	BYTE = "byte",
-	HEX = "hex",
-	RAW = "raw",
-	CODE = "code",
-	MINIMAL = "minimal",
-	DEBUG = "debug",
-}
+--- Echo keyboard display modes
+---@alias EchoKeyboardMode
+---| "all" # Show all information (character, bytes, code)
+---| "byte" # Show byte values only
+---| "hex" # Show hexadecimal values only
+---| "raw" # Show raw quoted string
+---| "code" # Show Unicode code point
+---| "minimal" # Show character only
+---| "debug" # Show detailed debug information
 
+--- EchoKeyboard displays typed characters in the echo area.
 ---@class EchoKeyboard
----@field enabled boolean
----@field _vimMessageInstance VimMessage
----@field _attach_group integer
----@field _mode EchoKeyboardMode
----@field _ns_id integer
----@field _key_callback fun(char: string)|nil
+---@field enabled boolean Whether the echo keyboard is enabled
+---@field _vimMessageInstance VimMessage Instance for displaying messages
+---@field _attach_group integer Autocmd group ID
+---@field _mode EchoKeyboardMode Current display mode
+---@field _ns_id integer Namespace ID for key callbacks
+---@field _key_callback fun(char: string)|nil Key callback function
 local M = {}
 
 M.__index = M
@@ -25,11 +25,13 @@ local _default = {
 	_vimMessageInstance = nil,
 	_attach_group = nil,
 	_ns_id = nil,
-	_mode = EchoKeyboardMode.ALL,
+	_mode = "all",
 	_key_callback = nil,
 }
 
----@param vimMessageInstance VimMessage
+--- Creates a new EchoKeyboard instance.
+---@param vimMessageInstance VimMessage Instance for displaying messages
+---@return EchoKeyboard
 function M.new(vimMessageInstance)
 	local self = setmetatable({}, M)
 	self.enabled = _default.enabled
@@ -41,7 +43,8 @@ function M.new(vimMessageInstance)
 	return self
 end
 
----@param enable boolean|any
+--- Enables or disables the echo keyboard display.
+---@param enable boolean|any If boolean, sets the state; otherwise toggles
 function M:enable(enable)
 	if type(enable) ~= "boolean" then
 		enable = not self.enabled
@@ -57,21 +60,31 @@ function M:enable(enable)
 		self:_attach()
 		pcall(function()
 			self._vimMessageInstance:i(
-				"EchoKeyboard : turn on [" .. self._mode .. "]"
+				"Echo Keyboard: enabled [" .. self._mode .. "]"
 			)
 		end)
 	else
 		self:_detach()
 		pcall(function()
-			self._vimMessageInstance:i("EchoKeyboard : turn off")
+			self._vimMessageInstance:i("Echo Keyboard: disabled")
 		end)
 	end
 end
 
----@param mode EchoKeyboardMode
+--- Sets the display mode.
+---@param mode EchoKeyboardMode The display mode to set
 function M:set_mode(mode)
 	local valid = false
-	for _, v in pairs(EchoKeyboardMode) do
+	for _, v in pairs(_default._mode) do
+		if v == mode then
+			valid = true
+			break
+		end
+	end
+
+	-- Check against known mode values
+	local validModes = { "all", "byte", "hex", "raw", "code", "minimal", "debug" }
+	for _, v in ipairs(validModes) do
 		if v == mode then
 			valid = true
 			break
@@ -81,7 +94,7 @@ function M:set_mode(mode)
 	if not valid then
 		pcall(function()
 			self._vimMessageInstance:w(
-				"EchoKeyboard : invalid mode '" .. tostring(mode) .. "'"
+				"Echo Keyboard: invalid mode '" .. tostring(mode) .. "'"
 			)
 		end)
 		return
@@ -90,13 +103,13 @@ function M:set_mode(mode)
 	self._mode = mode
 	pcall(function()
 		self._vimMessageInstance:i(
-			"EchoKeyboard : mode switched to '" .. mode .. "'"
+			"Echo Keyboard: mode set to '" .. mode .. "'"
 		)
 	end)
 end
 
+--- Attaches the key callback.
 ---@private
----@return nil
 function M:_attach()
 	if self._key_callback then
 		return
@@ -111,8 +124,8 @@ function M:_attach()
 	vim.on_key(self._key_callback, self._ns_id)
 end
 
+--- Detaches the key callback.
 ---@private
----@return nil
 function M:_detach()
 	if not self._key_callback then
 		return
@@ -122,9 +135,10 @@ function M:_detach()
 	self._key_callback = nil
 end
 
+--- Formats character information with all details.
 ---@private
----@param char string
----@return string
+---@param char string The character to format
+---@return string Formatted string
 function M:_format_all(char)
 	local bytes = {}
 	for i = 1, #char do
@@ -133,8 +147,9 @@ function M:_format_all(char)
 	return string.format("'%s' (%s)", char, table.concat(bytes, " "))
 end
 
----@param char string
----@return string
+--- Formats character as byte values.
+---@param char string The character to format
+---@return string Formatted string
 function M:_format_byte(char)
 	local bytes = {}
 	for i = 1, #char do
@@ -143,9 +158,10 @@ function M:_format_byte(char)
 	return table.concat(bytes, " ")
 end
 
+--- Formats character as hexadecimal values.
 ---@private
----@param char string
----@return string
+---@param char string The character to format
+---@return string Formatted string
 function M:_format_hex(char)
 	local bytes = {}
 	for i = 1, #char do
@@ -154,16 +170,18 @@ function M:_format_hex(char)
 	return table.concat(bytes, " ")
 end
 
+--- Formats character as raw quoted string.
 ---@private
----@param char string
----@return string
+---@param char string The character to format
+---@return string Formatted string
 function M:_format_raw(char)
 	return string.format("%q", char)
 end
 
+--- Formats character as Unicode code point.
 ---@private
----@param char string
----@return string
+---@param char string The character to format
+---@return string Formatted string
 function M:_format_code(char)
 	local cp = utf8 and utf8.codepoint(char)
 	if cp then
@@ -172,16 +190,18 @@ function M:_format_code(char)
 	return tostring(string.byte(char, 1))
 end
 
+--- Formats character minimally.
 ---@private
----@param char string
----@return string
+---@param char string The character to format
+---@return string Formatted string
 function M:_format_minimal(char)
 	return char
 end
 
+--- Formats character with debug information.
 ---@private
----@param char string
----@return string
+---@param char string The character to format
+---@return string Formatted string
 function M:_format_debug(char)
 	local bytes = {}
 	for i = 1, #char do
@@ -198,8 +218,9 @@ function M:_format_debug(char)
 	)
 end
 
+--- Displays a key press in the echo area.
 ---@private
----@param char string
+---@param char string The character to display
 function M:_display_key(char)
 	if char == "" or char == "0" then
 		return
@@ -207,19 +228,19 @@ function M:_display_key(char)
 
 	local formatted = ""
 
-	if self._mode == EchoKeyboardMode.ALL then
+	if self._mode == "all" then
 		formatted = self:_format_all(char)
-	elseif self._mode == EchoKeyboardMode.BYTE then
+	elseif self._mode == "byte" then
 		formatted = self:_format_byte(char)
-	elseif self._mode == EchoKeyboardMode.HEX then
+	elseif self._mode == "hex" then
 		formatted = self:_format_hex(char)
-	elseif self._mode == EchoKeyboardMode.RAW then
+	elseif self._mode == "raw" then
 		formatted = self:_format_raw(char)
-	elseif self._mode == EchoKeyboardMode.CODE then
+	elseif self._mode == "code" then
 		formatted = self:_format_code(char)
-	elseif self._mode == EchoKeyboardMode.MINIMAL then
+	elseif self._mode == "minimal" then
 		formatted = self:_format_minimal(char)
-	elseif self._mode == EchoKeyboardMode.DEBUG then
+	elseif self._mode == "debug" then
 		formatted = self:_format_debug(char)
 	else
 		formatted = char
@@ -227,7 +248,7 @@ function M:_display_key(char)
 
 	self._vimMessageInstance:i(
 		string.format(
-			"[Echo Keyboard]\nVim Mode: %s\n%s",
+			"[Echo Keyboard]\nMode: %s\n%s",
 			vim.api.nvim_get_mode().mode,
 			formatted
 		)
@@ -236,5 +257,13 @@ end
 
 return {
 	Class = M,
-	Mode = EchoKeyboardMode,
+	Mode = {
+		ALL = "all",
+		BYTE = "byte",
+		HEX = "hex",
+		RAW = "raw",
+		CODE = "code",
+		MINIMAL = "minimal",
+		DEBUG = "debug",
+	},
 }

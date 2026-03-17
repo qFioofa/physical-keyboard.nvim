@@ -6,5 +6,9 @@
 	"workspace.checkThirdParty": false,
 	"diagnostics.globals": [
 		"vim"
-	]
+	],
+	"diagnostics.disable": [],
+	"runtime.version": "LuaJIT",
+	"type.castNumberToInteger": true,
+	"type.inferParamFromUsage": true
 }

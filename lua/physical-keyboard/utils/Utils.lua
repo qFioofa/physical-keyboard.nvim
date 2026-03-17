@@ -1,8 +1,10 @@
 local c = require("physical-keyboard.const.Constants")
 
+--- Creates a deep copy of a table or returns the original value for non-tables.
+--- Handles circular references using a copies cache.
 ---@generic T
 ---@param original T
----@param copies table?
+---@param copies table? Cache of already copied references (internal use)
 ---@return T
 local function deepcopy(original, copies)
 	copies = copies or {}
@@ -11,6 +13,7 @@ local function deepcopy(original, copies)
 		return original
 	end
 
+	-- Handle circular references
 	if copies[original] then
 		return copies[original]
 	end
@@ -22,6 +25,7 @@ local function deepcopy(original, copies)
 		copy[deepcopy(key, copies)] = deepcopy(value, copies)
 	end
 
+	-- Copy metatable
 	local mt = getmetatable(original)
 	if mt then
 		setmetatable(copy, deepcopy(mt, copies))
@@ -30,55 +34,10 @@ local function deepcopy(original, copies)
 	return copy
 end
 
---- Must check for <C-...> commands too
----@param char string
-local function physicalCharTranslation(char)
-	if type(char) ~= "string" then
-		return {
-			false,
-			"'char' must be a string type",
-		}
-	end
-
-	if #char == 0 then
-		return {
-			false,
-			"'char' must not be empty",
-		}
-	end
-
-	char = char:sub(1, 1)
-
-	local result = {
-		true,
-		char = char,
-	}
-
-	return result
-end
-
----@param name string
----@param command function|string
----@param options table
-local function registerVimCommand(name, command, options)
-	local error = {
-		s = false,
-		m = "Can't register vim command: check the types",
-	}
-
-	if type(name) ~= "string" or type(options) ~= "table" then
-		return error.s, error.m
-	end
-
-	if type(command) ~= "function" and type(command) ~= "string" then
-		return error.s, error.m
-	end
-
-	vim.api.nvim_create_user_command(name, command, options)
-	return true, "None"
-end
-
----@param input boolean|string|number|any
+--- Converts various input types to a boolean value.
+--- Recognizes truthy values: true, 1, "true", "1", "on"
+--- Recognizes falsy values: false, 0, "false", "0", "off", nil
+---@param input boolean|string|number|any Input value to convert
 ---@return boolean
 local function toBoolean(input)
 	local truely = {
@@ -113,9 +72,10 @@ local function toBoolean(input)
 	return false
 end
 
----@param _table table
----@param _val any
----@return boolean
+--- Checks if a value exists in a table (array).
+---@param _table table The table to search
+---@param _val any The value to find
+---@return boolean True if value is found, false otherwise
 local function isInTable(_table, _val)
 	for _, value in ipairs(_table) do
 		if _val == value then
@@ -126,8 +86,9 @@ local function isInTable(_table, _val)
 	return false
 end
 
----@generic K, V
----@param t table<K, V>
+--- Extracts all values from a table into an array.
+---@generic V
+---@param t table<any, V>
 ---@return V[]
 local function tableValues(t)
 	local values = {}
@@ -137,7 +98,8 @@ local function tableValues(t)
 	return values
 end
 
----@generic T
+--- Deep merges two tables recursively.
+---@generic T: table
 ---@param t1 T
 ---@param t2 T
 ---@return T
@@ -147,8 +109,8 @@ local function tableMerge(t1, t2)
 	end
 
 	for k, v in pairs(t2) do
-		if type(v) == "table" and type("table") then
-			t1[k] = tableMerge(t1[k], v)
+		if type(v) == "table" and type(t1[k]) == "table" then
+			t1[k] = tableMerge(t1[k] or {}, v)
 		else
 			t1[k] = v
 		end
@@ -156,6 +118,7 @@ local function tableMerge(t1, t2)
 	return t1
 end
 
+--- Unpacks a range of elements from a table as multiple return values.
 ---@generic T
 ---@param list T[]
 ---@param i integer? Start index (default: 1)
@@ -176,10 +139,11 @@ local function tableUnpack(list, i, j)
 	return list[i], tableUnpack(list, i + 1, j)
 end
 
+--- Removes the first occurrence of a value from a table.
 ---@generic T
 ---@param list T[]
 ---@param value T
----@return boolean removed Returns true if an element was removed, false otherwise
+---@return boolean removed True if an element was removed, false otherwise
 local function tableEraseFirst(list, value)
 	for i = 1, #list do
 		if list[i] == value then
@@ -188,6 +152,25 @@ local function tableEraseFirst(list, value)
 		end
 	end
 	return false
+end
+
+--- Registers a Vim user command with error handling.
+---@param name string Command name
+---@param command function|string Command function or command string
+---@param options table Command options
+---@return boolean success True if registration succeeded
+---@return string? error_message Error message if registration failed
+local function registerVimCommand(name, command, options)
+	if type(name) ~= "string" or type(options) ~= "table" then
+		return false, "Invalid arguments: 'name' must be a string and 'options' must be a table"
+	end
+
+	if type(command) ~= "function" and type(command) ~= "string" then
+		return false, "Invalid argument: 'command' must be a function or string"
+	end
+
+	vim.api.nvim_create_user_command(name, command, options)
+	return true, nil
 end
 
 return {
@@ -201,5 +184,4 @@ return {
 	deepcopy = deepcopy,
 	toBoolean = toBoolean,
 	regCom = registerVimCommand,
-	toPhyCharTrans = physicalCharTranslation,
 }
