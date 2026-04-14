@@ -281,6 +281,10 @@ function M:_activateLayout(layoutName)
 	local ns_id = vim.api.nvim_create_namespace("LayoutMappings_" .. layoutName)
 	layout:setNsIdMappings(ns_id)
 
+	-- Clear any previously registered mappings from a previous activation
+	layout._registered_mappings = {}
+	local mapping_counter = 0
+
 	-- Check if EXCLUDE_INSERT option is set
 	local exclude_insert = false
 	-- Check if AUTO_LEADER_MAPPINGS option is set
@@ -364,6 +368,13 @@ function M:_activateLayout(layoutName)
 
 				if success then
 					mappingsCreated = mappingsCreated + 1
+					mapping_counter = mapping_counter + 1
+					-- Save the registered mapping to layout for later removal
+					layout._registered_mappings[mapping_counter] = {
+						mode = vim_mode,
+						lhs = original_char,
+						bufnr = -1,
+					}
 				else
 					self:_on_error(
 						string.format(
@@ -383,7 +394,7 @@ function M:_activateLayout(layoutName)
 	if has_leader_mappings or has_existing_mappings then
 		local leader_mappings_created = self:_translateLeaderMappings(
 			layoutName,
-			layout.map,
+			layout,
 			modes_to_use,
 			ns_id,
 			has_leader_mappings,
@@ -426,13 +437,13 @@ end
 ---
 ---@private
 ---@param layoutName string Name of the layout being activated
----@param map table<string, string> Character mapping table (physical -> english)
+---@param layout Layout Layout object to register mappings on
 ---@param modes_to_use table<string> List of vim modes to process (e.g., {"n", "v", "o"})
----@param ns_id number Namespace ID for the mappings
+---@param _ns_id number Namespace ID for the mappings
 ---@param has_leader_mappings boolean Whether to process only leader mappings
 ---@param has_existing_mappings boolean Whether to process all existing mappings
 ---@return number Number of leader mappings created
-function M:_translateLeaderMappings(layoutName, map, modes_to_use, ns_id, has_leader_mappings, has_existing_mappings)
+function M:_translateLeaderMappings(layoutName, layout, modes_to_use, _ns_id, has_leader_mappings, has_existing_mappings)
 	local mappingsCreated = 0
 
 	-- Get the leader key (default is '\')
@@ -455,7 +466,7 @@ function M:_translateLeaderMappings(layoutName, map, modes_to_use, ns_id, has_le
 
 	-- Create reverse map (english -> physical) for translation
 	local reverseMap = {}
-	for phys, en in pairs(map) do
+	for phys, en in pairs(layout.map) do
 		if type(phys) == "string" and type(en) == "string" then
 			-- Skip marker keys
 			if phys ~= "_LEADER_MAPPING_MARKER_" and phys ~= "_EXISTING_MAPPING_MARKER_" then
@@ -522,7 +533,7 @@ function M:_translateLeaderMappings(layoutName, map, modes_to_use, ns_id, has_le
 
 			-- Check if this is a leader mapping or if we're processing all mappings
 			-- Use normalizedLeader for consistent detection
-			local isLeaderMapping = lhs:find(normalizedLeader, 1, true) == 1
+			local isLeaderMapping = lhs and lhs:find(normalizedLeader, 1, true) == 1
 			local shouldProcess = (has_leader_mappings and isLeaderMapping) or
 			                      (has_existing_mappings and not isLeaderMapping) or
 			                      (has_leader_mappings and has_existing_mappings)
@@ -557,6 +568,13 @@ function M:_translateLeaderMappings(layoutName, map, modes_to_use, ns_id, has_le
 
 					if success then
 						mappingsCreated = mappingsCreated + 1
+						-- Save the registered leader mapping to layout for later removal
+						local counter = #layout._registered_mappings + 1
+						layout._registered_mappings[counter] = {
+							mode = mode,
+							lhs = translatedLhs,
+							bufnr = 0,
+						}
 					else
 						self:_on_error(
 							string.format(
@@ -594,37 +612,22 @@ function M:_cleanLayout(layoutName)
 		return false
 	end
 
-	local ns_id = layout:getNsIdMappings()
 	local mappingsRemoved = 0
 
-	if ns_id then
-		for original_char, _ in pairs(layout.map) do
-			-- Skip marker keys
-			if type(original_char) == "string"
-				and original_char ~= "_LEADER_MAPPING_MARKER_"
-				and original_char ~= "_EXISTING_MAPPING_MARKER_"
-				and original_char ~= "_EXCLUDE_INSERT_MARKER_"
-			then
-				for _, vim_mode in ipairs(layout.vim_mode) do
-					local success = pcall(function()
-						vim.keymap.del(vim_mode, original_char, { buffer = 0, nsid = ns_id })
-						mappingsRemoved = mappingsRemoved + 1
-					end)
+	-- Remove all registered mappings using the exact mode, lhs, and bufnr they were created with
+	for _, mapping_info in ipairs(layout._registered_mappings) do
+		local success = pcall(function()
+			vim.api.nvim_buf_del_keymap(mapping_info.bufnr, mapping_info.mode, mapping_info.lhs)
+		end)
 
-					if not success then
-						self:_on_error(
-							string.format(
-								"Failed to remove mapping '%s' in mode '%s'",
-								original_char,
-								vim_mode
-							)
-						)
-					end
-				end
-			end
+		if success then
+			mappingsRemoved = mappingsRemoved + 1
 		end
-		layout:setNsIdMappings(nil)
 	end
+
+	-- Clear the registered mappings table
+	layout._registered_mappings = {}
+	layout:setNsIdMappings(nil)
 
 	self._vimMessageInstance:i(
 		string.format(

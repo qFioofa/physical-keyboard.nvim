@@ -5,7 +5,8 @@
 	],
 	"workspace.checkThirdParty": false,
 	"diagnostics.globals": [
-		"vim"
+		"vim",
+		"utf8"
 	],
 	"diagnostics.disable": [],
 	"runtime.version": "LuaJIT",

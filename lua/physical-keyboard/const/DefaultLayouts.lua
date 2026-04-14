@@ -1,3 +1,5 @@
+local Layout = require("physical-keyboard.layout.Layout")
+
 --- Default layout module paths
 local folder = "physical-keyboard.default-layouts."
 

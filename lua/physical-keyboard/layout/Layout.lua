@@ -4,8 +4,26 @@ local VimMods = VimModsModule.VimMods
 local c = require("physical-keyboard.const.Constants")
 local u = require("physical-keyboard.utils.Utils")
 
---- @enum
---- @class FormMapOptions
+--- Form map option constants
+---@alias FormMapOptions
+---| "all"
+---| "auto_capital"
+---| "auto_modifiers"
+---| "auto_shift_specials"
+---| "auto_numbers"
+---| "auto_whitespace"
+---| "auto_brackets"
+---| "auto_visual_duplicate"
+---| "auto_insert_normal_duplicate"
+---| "exclude_insert"
+---| "auto_altgr"
+---| "auto_dead_keys"
+---| "auto_accents"
+---| "auto_iso_specials"
+---| "auto_noremap_variants"
+---| "auto_keypad"
+---| "auto_leader_mappings"
+---| "auto_existing_mappings"
 local FormMapOptions = {
 	--- Include all options below
 	ALL = "all",
@@ -113,11 +131,13 @@ local FormMapOptions = {
 ---@field name string
 ---@field active boolean
 ---@field vim_mode table<VimMod>
----@field form_map_options table<FormMapOptions>|table<string, string>|string
+---@field form_map_options FormMapOptions[]|string
 ---@field layout_name string
 ---@field map table<string, string>
 ---@field ns_id number|nil
 ---@field _on_error fun(msg: string)
+---@field _registered_mappings table<integer, table>
+---@field _ns_id_mappings number|nil
 local M = {}
 
 M.__index = M
@@ -130,6 +150,7 @@ local _default = {
 	layout_name = "qwerty",
 	map = {},
 	_on_error = function(_) end,
+	_registered_mappings = {},
 }
 
 function M.new()
@@ -142,6 +163,7 @@ function M.new()
 	self.layout_name = _default.layout_name
 	self.map = vim.deepcopy(_default.map)
 	self._on_error = _default._on_error
+	self._registered_mappings = {}
 	return self
 end
 
@@ -490,24 +512,6 @@ function M.autoModifiers(map)
 	return res
 end
 
----@param map table<string, string>
----@return table<string,string>
-function M.autoVisualDuplicate(map)
-	local res = vim.deepcopy(map)
-	--- Visual mode mappings are typically the same as normal mode
-	--- for character-based motions and operations
-	return res
-end
-
----@param map table<string, string>
----@return table<string,string>
-function M.autoInsertNormalDuplicate(map)
-	local res = vim.deepcopy(map)
-	--- Insert mode mappings are typically the same as normal mode
-	--- for direct character input
-	return res
-end
-
 --- Automatically handles the mapping of shifted special characters.
 --- Maps punctuation and symbols accessed via Shift key.
 ---
@@ -640,7 +644,7 @@ function M.autoWhitespace(map)
 		["<Space>"] = "<Space>",
 	}
 
-	for phys_char, en_char in pairs(map) do
+	for phys_char, _ in pairs(map) do
 		local ws_mapping = whitespace_map[phys_char]
 		if ws_mapping then
 			res[phys_char] = ws_mapping
@@ -755,6 +759,7 @@ end
 --- - Only affects mapping creation, not runtime behavior
 --- - Does not prevent insert mode mappings from other sources
 function M.excludeInsert(map)
+	_ = map
 	-- This option doesn't add mappings, but signals to remove 'i' mode
 	-- from vim_mode list during mapping creation
 	-- The actual filtering is handled in LayoutHandler:_activateLayout
@@ -1027,7 +1032,7 @@ function M.autoIsoSpecials(map)
 	}
 
 	-- Map ISO special characters to themselves or to equivalent sequences
-	for phys_char, en_char in pairs(map) do
+	for phys_char, _ in pairs(map) do
 		local iso_mapping = iso_specials[phys_char]
 		if iso_mapping then
 			res[phys_char] = iso_mapping
@@ -1136,9 +1141,6 @@ end
 --- Automatically detects and translates existing leader key mappings.
 --- Scans for mappings that use <leader> and creates translated versions.
 ---
---- @param map table<string, string> Base character mapping table
---- @return table<string, string> Marker table (actual translation in LayoutHandler)
----
 --- HOW IT WORKS:
 --- - Returns marker "_LEADER_MAPPING_MARKER_" to signal LayoutHandler
 --- - LayoutHandler scans existing mappings for leader-based sequences
@@ -1158,8 +1160,8 @@ end
 --- - Does not handle recursive mappings (noremap=false)
 --- - May create duplicate mappings if called multiple times
 --- - Performance impact: scans all existing mappings
----@param map table<string, string>
----@return table<string,string>
+---@param map table<string, string> Base character mapping table
+---@return table<string, string> Marker table (actual translation in LayoutHandler)
 function M.autoLeaderMappings(map)
 	local res = vim.deepcopy(map)
 	-- This function doesn't add mappings directly to the map
@@ -1172,9 +1174,6 @@ end
 --- Automatically detects and translates existing buffer-local and global mappings.
 --- Similar to autoLeaderMappings but works for all mappings, not just leader-based.
 ---
---- @param map table<string, string> Base character mapping table
---- @return table<string, string> Marker table (actual translation in LayoutHandler)
----
 --- HOW IT WORKS:
 --- - Returns marker "_EXISTING_MAPPING_MARKER_" to signal LayoutHandler
 --- - LayoutHandler scans all existing mappings
@@ -1184,8 +1183,8 @@ end
 --- - This can create a large number of mappings
 --- - May have performance impact with many plugins
 ---
----@param map table<string, string>
----@return table<string,string>
+---@param map table<string, string> Base character mapping table
+---@return table<string, string> Marker table (actual translation in LayoutHandler)
 function M.autoExistingMappings(map)
 	local res = vim.deepcopy(map)
 	-- This function doesn't add mappings directly to the map

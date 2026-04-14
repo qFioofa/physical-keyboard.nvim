@@ -4,6 +4,7 @@ local vimNotify = require("physical-keyboard.utils.Message")
 ---@class Globals
 ---@field VimNotify VimMessage Global notification instance
 
+---@diagnostic disable-next-line: assign-type-mismatch
 return {
 	VimNotify = vimNotify.new(),
 }

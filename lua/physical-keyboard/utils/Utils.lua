@@ -40,7 +40,7 @@ end
 ---@param input boolean|string|number|any Input value to convert
 ---@return boolean
 local function toBoolean(input)
-	local truely = {
+	local truly = {
 		true,
 		1,
 		"true",
@@ -54,10 +54,9 @@ local function toBoolean(input)
 		"false",
 		"0",
 		"off",
-		nil,
 	}
 
-	for _, value in ipairs(truely) do
+	for _, value in ipairs(truly) do
 		if value == input then
 			return true
 		end
@@ -123,7 +122,7 @@ end
 ---@param list T[]
 ---@param i integer? Start index (default: 1)
 ---@param j integer? End index (default: #list)
----@return ... T Returns multiple values from the table
+---@return ... Returns multiple values from the table
 local function tableUnpack(list, i, j)
 	if type(list) ~= "table" then
 		return

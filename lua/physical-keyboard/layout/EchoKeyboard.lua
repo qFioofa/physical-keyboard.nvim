@@ -75,12 +75,6 @@ end
 ---@param mode EchoKeyboardMode The display mode to set
 function M:set_mode(mode)
 	local valid = false
-	for _, v in pairs(_default._mode) do
-		if v == mode then
-			valid = true
-			break
-		end
-	end
 
 	-- Check against known mode values
 	local validModes = { "all", "byte", "hex", "raw", "code", "minimal", "debug" }

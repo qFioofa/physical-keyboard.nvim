@@ -94,7 +94,6 @@ fr_en:setMap({
 	["!"] = "?", -- ! is where ? is in QWERTY
 	["W"] = "Z",
 	["M"] = ":",
-	["Ù"] = '"',
 
 	-- Special French accented characters (map to base form)
 	["É"] = "E",

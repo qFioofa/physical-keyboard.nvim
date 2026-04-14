@@ -116,9 +116,44 @@ my_layout:setFormMapOptions({
 | `:PhyKeyboardEnableLayout <name>` | Enable a specific layout |
 | `:PhyKeyboardDisableLayout <name>` | Disable a specific layout |
 | `:PhyKeyboardSet <name> <true/false>` | Set layout active state |
-| `:PhyKeyboardEcho [on/off]` | Toggle keyboard echo display |
-| `:PhyKeyboardEchoMode <mode>` | Set echo display mode |
 | `:PhyKeyboardNotify [on/off]` | Toggle notifications |
+
+## Echo Keyboard
+
+The Echo Keyboard feature displays typed characters in the echo area, showing detailed information about each key press. This is useful for debugging layout translations or understanding exactly what characters are being sent to Neovim.
+
+### Usage
+
+```vim
+" Toggle echo keyboard on/off
+:PhyKeyboardEcho
+
+" Set display mode
+:PhyKeyboardEchoMode minimal
+```
+
+### Display Modes
+
+| Mode | Description | Example Output |
+|------|-------------|----------------|
+| `all` | Show character, bytes, and code point | `'ф' (0xD1 0x84)` |
+| `byte` | Show decimal byte values | `209 132` |
+| `hex` | Show hexadecimal byte values | `0xD1 0x84` |
+| `raw` | Show raw quoted string | `"ф"` |
+| `code` | Show Unicode code point | `1092` |
+| `minimal` | Show character only | `ф` |
+| `debug` | Show detailed debug info | `Key: 'ф' \| Bytes: [209, 132] \| Code: 1092 \| Len: 2` |
+
+### Example
+
+```vim
+" Enable echo keyboard with minimal display
+:PhyKeyboardEcho
+:PhyKeyboardEchoMode minimal
+
+" Now type any key to see its details in the echo area
+" Output: [Echo Keyboard] Mode: n \n ф
+```
 
 ## Creating Custom Layouts
 

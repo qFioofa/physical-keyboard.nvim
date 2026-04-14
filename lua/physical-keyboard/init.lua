@@ -179,10 +179,6 @@ local function registerCommands()
 					end
 
 					if space_count == 1 then
-						if not GLayoutHandler then
-							return {}
-						end
-
 						local layouts = GLayoutHandler:getRegistedLayouts()
 
 						local filtered = {}
@@ -224,11 +220,8 @@ local function registerCommands()
 				arg = u.toBoolean(arg)
 				if arg == true then
 					GEchoLayout:enable(true)
-				elseif arg == false then
-					GEchoLayout:enable(false)
 				else
-					-- Toggle if no argument or invalid argument
-					GEchoLayout:enable(not GEchoLayout.enabled)
+					GEchoLayout:enable(false)
 				end
 			end,
 			o = {
