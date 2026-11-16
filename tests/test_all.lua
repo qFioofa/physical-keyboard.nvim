@@ -219,6 +219,12 @@ do
 	local found = vim.fn.maparg("<Leader>ив", "n", false, true)
 	truthy(type(found) == "table" and found.buffer == 1, "buffer-local mapping is mirrored")
 
+	eq(
+		mappings.automapping({ buffer = true, bufnr = 999999 }),
+		0,
+		"invalid buffer is ignored"
+	)
+
 	disable()
 end
 

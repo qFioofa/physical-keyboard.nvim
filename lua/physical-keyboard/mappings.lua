@@ -393,6 +393,10 @@ local function scan_global(modes)
 end
 
 local function scan_buffer(bufnr, modes)
+	if not vim.api.nvim_buf_is_valid(bufnr) then
+		return 0
+	end
+
 	local created = 0
 	for _, mode in ipairs(modes) do
 		local existing = {}
