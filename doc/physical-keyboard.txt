@@ -19,11 +19,12 @@ CONTENTS                                            *physical-keyboard-contents*
   9. Mapping mirroring ................... |physical-keyboard-mappings|
  10. Command-line aliases ................ |physical-keyboard-cmdline|
  11. Commands ............................ |physical-keyboard-commands|
- 12. Statusline .......................... |physical-keyboard-statusline|
- 13. Events and callbacks ................ |physical-keyboard-events|
- 14. AI configuration .................... |physical-keyboard-ai|
- 15. Troubleshooting ..................... |physical-keyboard-troubleshooting|
- 16. License ............................. |physical-keyboard-license|
+ 12. UI panel ............................ |physical-keyboard-ui|
+ 13. Statusline .......................... |physical-keyboard-statusline|
+ 14. Events and callbacks ................ |physical-keyboard-events|
+ 15. AI configuration .................... |physical-keyboard-ai|
+ 16. Troubleshooting ..................... |physical-keyboard-troubleshooting|
+ 17. License ............................. |physical-keyboard-license|
 
 ==============================================================================
 1. INTRODUCTION                                     *physical-keyboard-intro*
@@ -131,6 +132,9 @@ Defaults are shown below.  Only the keys you need have to be set. >lua
       enabled = false,
       mode = "all",
     },
+
+    -- UI changes are stored in a JSON override file; false ignores it.
+    overrides = true,
   })
 <
 `notify = false` means `"errors"`.  Use `"off"` to silence the plugin
@@ -161,9 +165,13 @@ Commands:
   `:PhyKeyboardReload`      re-run setup and re-read the file
   `:PhyKeyboardConfig`      show the effective configuration
   `:PhyKeyboardConfig --json`  machine-readable configuration
+  `:PhyKeyboardConfigReset` delete UI overrides and reload
 
-Precedence: defaults, then the config file, then `setup()` options, then
-environment variables.
+Precedence: defaults, then the config file, then `setup()` options, then the
+override file, then environment variables.
+
+UI changes are stored in `stdpath("state")/physical-keyboard/overrides.json`.
+Set `overrides = false` in `setup()` to ignore that file.
 
 ==============================================================================
 6. ENVIRONMENT VARIABLES                             *physical-keyboard-env*
@@ -173,6 +181,7 @@ environment variables.
 `PKB_DISABLE=1` disable the plugin for this run
 `PKB_DEBUG=1`  enable echo mode, debug mode and all notifications
 `PKB_NOTIFY`   `all`, `errors` or `off`
+`PKB_OVERRIDES` custom path for the JSON override file
 
 Examples: >sh
   PKB_LAYOUT=ru nvim
@@ -280,8 +289,10 @@ Runtime: >vim
 11. COMMANDS                                     *physical-keyboard-commands*
 
 `:PhyKeyboard`                  general information
+:PhyKeyboardUI`                floating dashboard (settings editable)
 `:PhyKeyboardStatus`            detection, langmap and mapping status
 `:PhyKeyboardConfig [--json]`   effective configuration
+`:PhyKeyboardConfigReset`       delete UI overrides and reload
 `:PhyKeyboardDoctor [--json]`   full environment report
 `:PhyKeyboardList`              bundled layouts
 `:PhyKeyboardDetect`            raw detection result
@@ -304,7 +315,41 @@ Backwards-compatible commands: `:PhyKeyboardEnableLayout`,
 `:PhyKeyboardDisableLayout`, `:PhyKeyboardSet`.
 
 ==============================================================================
-12. STATUSLINE                                 *physical-keyboard-statusline*
+12. UI PANEL                                          *physical-keyboard-ui*
+
+`:PhyKeyboardUI` opens a floating dashboard.  The left tree groups
+pages by section; the right pane renders the selected page.  Root nodes act as
+sections: `Tab` and `S-Tab` switch between them.
+
+Default panel keymaps:
+  j / k, arrows          move selection
+  h / l                  focus tree / content (same as [ / ])
+  <Left> / <Right>       collapse/expand; parent/enter mode group
+  [ / ]                  focus tree / content pane
+  i / o                  open item / expand mode group
+  <Space>                toggle a boolean setting / open a chooser
+  /                      search mirrored bindings in the bottom help window
+  <CR>                   activate
+  Tab / <S-Tab>          next / previous section
+  g / G                  first / last item
+  <C-d> / <C-u>          scroll content
+  r                      refresh data and run probes
+  R                      delete UI overrides (Config -> Effective)
+  ?                      help
+  <Esc>                  content -> tree, then close
+  q                      close
+
+Pages: Status, Layouts, Detection, Mappings, Cmdline, Echo, Config and Doctor.
+Config -> Effective is editable: booleans toggle with Enter/Space, while enums
+and multi-selects open a picker with a description, examples, notes and Cancel.
+Changes are written to the override file.  Everything else is read-only.
+Detection provider probes run asynchronously.
+
+Highlight groups use the `PhyKeyboardUI*` prefix and are linked to built-in
+groups by default.  Override them in a colorscheme if needed.
+
+==============================================================================
+13. STATUSLINE                                 *physical-keyboard-statusline*
 
 The module exposes a statusline component: >lua
   vim.o.statusline = "%{v:lua.require'physical-keyboard'.statusline()} %f"
@@ -330,7 +375,7 @@ value, provider and English flag.  `vim.g.physical_keyboard_layout` contains
 `ru`, `de`, `en` or an empty string.
 
 ==============================================================================
-13. EVENTS AND CALLBACKS                         *physical-keyboard-events*
+14. EVENTS AND CALLBACKS                         *physical-keyboard-events*
 
 User events:
   `PhysicalKeyboardEnabled`
@@ -359,7 +404,7 @@ Example: >lua
 The same information is passed to `detect.on_change` when configured.
 
 ==============================================================================
-14. AI CONFIGURATION                                *physical-keyboard-ai*
+15. AI CONFIGURATION                                *physical-keyboard-ai*
 
 An AI assistant can configure the plugin from a user's request:
 
@@ -381,7 +426,7 @@ The repository contains `AGENTS.md` with the complete AI playbook, decision
 table and recipes.  Do not install external tools without asking the user.
 
 ==============================================================================
-15. TROUBLESHOOTING                       *physical-keyboard-troubleshooting*
+16. TROUBLESHOOTING                       *physical-keyboard-troubleshooting*
 
 `E357: 'langmap': Matching character missing`
   A special character is not escaped.  This is a plugin bug; please report it.
@@ -416,7 +461,7 @@ The plugin does nothing
   function.  Check `:PhyKeyboardStatus`.
 
 ==============================================================================
-16. LICENSE                                          *physical-keyboard-license*
+17. LICENSE                                          *physical-keyboard-license*
 
 MIT.  Layout data is from ai/convert-layout (MIT).  Mapping mirroring is
 inspired by Wansmer/langmapper.nvim (MIT).  The unique-submap idea comes from

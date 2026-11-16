@@ -6,6 +6,8 @@ local mappings = require("physical-keyboard.mappings")
 local cmdline = require("physical-keyboard.cmdline")
 local echo = require("physical-keyboard.echo")
 local commands = require("physical-keyboard.commands")
+local options = require("physical-keyboard.options")
+local overrides_store = require("physical-keyboard.overrides")
 
 --- physical-keyboard.nvim
 ---
@@ -25,6 +27,7 @@ local M = {
 	_extra_set = {},
 	_last_detect = { provider = nil, raw = nil, layout = nil, english = false },
 	_setup_opts = nil,
+	_session_overrides = {},
 	_toggle_key = nil,
 	_apply_generation = 0,
 }
@@ -364,6 +367,89 @@ local function setup_autocmds()
 	})
 end
 
+--- Re-applies a resolved configuration without resetting runtime choices such
+--- as a forced layout or layouts discovered by detection.
+---@param cfg table
+local function wire(cfg)
+	M.config = cfg
+	M._notify_mode = cfg.notify
+
+	if M._enabled and not cfg.langmap.enabled then
+		set_langmap("")
+	end
+
+	if not cfg.enable and M._enabled then
+		M.disable()
+	end
+
+	echo.setup({
+		notify = function(message)
+			M.notify(message, vim.log.levels.INFO)
+		end,
+		mode = cfg.echo.mode,
+	})
+	echo.enable(not not cfg.echo.enabled)
+
+	detect.setup({
+		enabled = cfg.detect.enabled,
+		min_interval = cfg.detect.min_interval,
+		timeout = cfg.detect.timeout,
+		provider = cfg.detect.provider,
+		providers = cfg.detect.providers,
+		remote = cfg.detect.remote,
+		async = cfg.detect.async,
+		active_ids = M.effective_layouts(),
+	})
+
+	mappings.cleanup()
+	mappings.setup({
+		enabled = cfg.mappings.enabled,
+		modes = cfg.mappings.modes,
+		exclude = cfg.mappings.exclude,
+		extra = cfg.mappings.extra,
+		active_ids = M.effective_layouts(),
+	})
+	if cfg.enable and cfg.mappings.enabled and cfg.mappings.hack_keymap then
+		mappings.hack()
+	else
+		mappings.unhack()
+	end
+
+	cmdline.set_active_ids(M.effective_layouts())
+	cmdline.disable()
+	if cfg.enable and cfg.cmdline.enabled then
+		cmdline.enable()
+	end
+
+	setup_autocmds()
+
+	if M._toggle_key then
+		pcall(vim.keymap.del, "n", M._toggle_key)
+		M._toggle_key = nil
+	end
+	if type(cfg.toggle_key) == "string" and cfg.toggle_key ~= "" then
+		local key = cfg.toggle_key
+		vim.keymap.set("n", key, function()
+			M.toggle()
+		end, { desc = "Toggle physical-keyboard" })
+		M._toggle_key = key
+	end
+
+	if cfg.enable then
+		if not M._enabled then
+			M.enable()
+		else
+			if cfg.mappings.enabled then
+				M.refresh_mappings()
+				if cfg.mappings.automapping then
+					schedule_automap()
+				end
+			end
+			M.refresh(true)
+		end
+	end
+end
+
 ---@return table
 function M.status()
 	local cfg = M.config or config.resolve({})
@@ -404,6 +490,11 @@ function M.status()
 		},
 		config_source = cfg.source,
 		config_file = cfg.config_file,
+		overrides = {
+			enabled = cfg.overrides and cfg.overrides.enabled or false,
+			file = config.overrides_path(cfg.overrides),
+			exists = overrides_store.exists(config.overrides_path(cfg.overrides)),
+		},
 		notify = M._notify_mode,
 		layout = info,
 		config = cfg,
@@ -620,6 +711,91 @@ function M.echo_mode(mode)
 	return ok
 end
 
+---@param path string
+---@return any
+function M.get_option(path)
+	local spec = options.spec(path)
+	if not spec then
+		return nil
+	end
+	local cfg = M.config or config.resolve(M._setup_opts or {}, M._session_overrides)
+	return options.get(cfg, path)
+end
+
+--- Changes one whitelisted option at runtime and persists it to the override
+--- file when override loading is enabled.
+---@param path string
+---@param value any
+---@return boolean ok
+---@return string|nil error
+---@return boolean persisted
+function M.set_option(path, value)
+	local spec = options.spec(path)
+	if not spec then
+		return false, "unknown option: " .. tostring(path), false
+	end
+
+	local normalized, err, unset = options.normalize(spec, value)
+	if err then
+		return false, err, false
+	end
+	local stored = unset and nil or normalized
+
+	local persist = not not (M.config and M.config.overrides and M.config.overrides.enabled)
+	if persist then
+		local file = config.overrides_path(M.config.overrides)
+		local saved, save_err = overrides_store.set_value(path, stored, file)
+		if not saved then
+			return false, save_err, false
+		end
+	end
+
+	if unset then
+		overrides_store.unset_value_in(M._session_overrides, path)
+	else
+		overrides_store.set_value_in(M._session_overrides, path, stored)
+	end
+
+	M.config = config.resolve(M._setup_opts or {}, M._session_overrides)
+	wire(M.config)
+	M.emit("ConfigChanged", {
+		path = path,
+		value = stored,
+		unset = unset,
+		persisted = persist,
+	})
+	return true, nil, persist
+end
+
+---@return boolean
+---@return string|nil
+function M.reset_overrides()
+	local path = config.overrides_path(M.config and M.config.overrides or nil)
+	local ok, err = overrides_store.remove(path)
+	if not ok then
+		return false, err
+	end
+	M._session_overrides = {}
+	M.config = config.resolve(M._setup_opts or {})
+	wire(M.config)
+	M.emit("ConfigChanged", { path = "<overrides>", value = nil, unset = true, persisted = true })
+	return true, nil
+end
+
+---@return table
+function M.overrides_info()
+	local cfg = M.config or config.resolve(M._setup_opts or {}, M._session_overrides)
+	local settings = cfg.overrides or { enabled = true }
+	local path = config.overrides_path(settings)
+	return {
+		enabled = settings.enabled,
+		file = path,
+		exists = overrides_store.exists(path),
+		values = (cfg.source and cfg.source.overrides) or {},
+		session = vim.deepcopy(M._session_overrides or {}),
+	}
+end
+
 ---@return string
 function M.config_file()
 	if M.config and type(M.config.config_file) == "string" then
@@ -710,6 +886,7 @@ function M.setup(opts)
 		M.disable()
 	end
 
+	M._session_overrides = {}
 	M.config = config.resolve(opts)
 	M._notify_mode = M.config.notify
 	M._forced = nil
@@ -739,31 +916,6 @@ function M.setup(opts)
 	if echo.is_enabled() then
 		echo.enable(false)
 	end
-	echo.setup({
-		notify = function(message)
-			M.notify(message, vim.log.levels.INFO)
-		end,
-		mode = M.config.echo.mode,
-	})
-
-	detect.setup({
-		enabled = M.config.detect.enabled,
-		min_interval = M.config.detect.min_interval,
-		timeout = M.config.detect.timeout,
-		provider = M.config.detect.provider,
-		providers = M.config.detect.providers,
-		remote = M.config.detect.remote,
-		async = M.config.detect.async,
-		active_ids = M.config.active_layouts,
-	})
-
-	mappings.setup({
-		enabled = M.config.mappings.enabled,
-		modes = M.config.mappings.modes,
-		exclude = M.config.mappings.exclude,
-		extra = M.config.mappings.extra,
-		active_ids = M.config.active_layouts,
-	})
 
 	cmdline.setup({
 		enabled = M.config.cmdline.enabled,
@@ -773,29 +925,14 @@ function M.setup(opts)
 	})
 
 	commands.register(M)
-	setup_autocmds()
+	wire(M.config)
 
 	if M.config.enable then
-		M.enable()
+		if M.config.echo.enabled then
+			echo.enable(true)
+		end
 	else
-		M._enabled = false
 		M.notify("Plugin is disabled (config.enable = false)", vim.log.levels.WARN)
-	end
-
-	if M.config.echo.enabled then
-		echo.enable(true)
-	end
-
-	if M._toggle_key then
-		pcall(vim.keymap.del, "n", M._toggle_key)
-		M._toggle_key = nil
-	end
-	if type(M.config.toggle_key) == "string" and M.config.toggle_key ~= "" then
-		local key = M.config.toggle_key
-		vim.keymap.set("n", key, function()
-			M.toggle()
-		end, { desc = "Toggle physical-keyboard" })
-		M._toggle_key = key
 	end
 
 	return M

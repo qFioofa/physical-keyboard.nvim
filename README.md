@@ -46,6 +46,8 @@ No external binary is downloaded and no GPL code is bundled.
 - **`langremap` is disabled** — mappings are not re-translated recursively.
 - **`:checkhealth physical-keyboard`** — shows the detected provider, current
   layout, langmap size and mirrored mappings.
+- **`:PhyKeyboardUI`** — a floating dashboard with a tree of status,
+  layouts, detection, mappings, cmdline, echo, config and doctor pages.
 
 ## Requirements
 
@@ -157,6 +159,10 @@ require("physical-keyboard").setup({
     enabled = false,
     mode = "all",
   },
+
+  -- Runtime changes made from the UI are stored here, never in your config.
+  -- Set false to ignore the override file (or { enabled = false }).
+  overrides = true,
 })
 ```
 
@@ -189,7 +195,25 @@ Commands:
 - `:PhyKeyboardReload` — re-run `setup()` and re-read the file;
 - `:PhyKeyboardConfig [--json]` — show the effective configuration.
 
-Precedence: defaults → config file → `setup()` options → environment variables.
+Precedence: defaults → config file → `setup()` options → override file →
+environment variables.
+
+### Override file
+
+Changes made from the UI are saved to
+`stdpath("state")/physical-keyboard/overrides.json` (or `PKB_OVERRIDES`). The
+file is JSON, so comments and formatting in your Lua configuration are never
+touched. Disable loading it with:
+
+```lua
+require("physical-keyboard").setup({
+  overrides = false,
+})
+```
+
+`:PhyKeyboardConfigReset` (or `R` on Config → Effective) deletes the file and
+reloads the base configuration. When override loading is disabled, UI changes
+are session-only.
 
 ### Environment variables
 
@@ -200,6 +224,7 @@ Precedence: defaults → config file → `setup()` options → environment varia
 | `PKB_DISABLE=1` | disable the plugin for this run |
 | `PKB_DEBUG=1` | enable echo, debug mode and all notifications |
 | `PKB_NOTIFY` | `all`, `errors` or `off` |
+| `PKB_OVERRIDES` | custom path for the JSON override file |
 
 ```sh
 PKB_LAYOUT=de nvim
@@ -325,8 +350,10 @@ Runtime:
 | Command | Description |
 |---------|-------------|
 | `:PhyKeyboard` | General information |
+| `:PhyKeyboardUI` | Read-only floating dashboard |
 | `:PhyKeyboardStatus` | Detection, language map and mapping status |
 | `:PhyKeyboardConfig [--json]` | Effective configuration |
+| `:PhyKeyboardConfigReset` | Delete UI overrides and reload the base config |
 | `:PhyKeyboardDoctor [--json]` | Full environment report |
 | `:PhyKeyboardList` | List bundled layouts |
 | `:PhyKeyboardDetect` | Show the raw detection result |
@@ -346,6 +373,83 @@ Runtime:
 
 Backwards-compatible commands: `:PhyKeyboardEnableLayout`,
 `:PhyKeyboardDisableLayout`, `:PhyKeyboardSet`.
+
+## UI panel
+
+`:PhyKeyboardUI` opens a floating dashboard. The left tree groups
+pages by section; the right side renders the selected page. Root nodes act as
+tabs: `Tab` and `S-Tab` switch sections.
+
+```text
+physical-keyboard › Status › Overview
+╭ Tree ──────────────╮ ╭ Overview ──────────────────────────────────────╮
+│ ▾ Status           │ │ State       ● enabled      Notify   errors    │
+│   ● Overview       │ │ Layout      RU             Provider niri      │
+│   ○ Statusline     │ │ langmap     74 pairs       Mappings 217       │
+│   ○ Events         │ │ Cmdline     37 aliases     Echo     on/debug  │
+│ ▸ Layouts          │ │ Health      ✓ langmap  ✓ detection  ✓ config │
+╰────────────────────╯ ╰────────────────────────────────────────────────╯
+```
+
+Default keymaps inside the panel:
+
+| Keys | Action |
+|------|--------|
+| `j` / `k`, arrows | Move in the tree or between content lines |
+| `h` / `l` | Focus the tree / content pane (same as `[` / `]`) |
+| `<Left>` / `<Right>` | Collapse / expand in the tree; parent / enter a mode group in content |
+| `[` / `]` | Focus the tree / content pane |
+| `i` / `o` | Open the selected item / expand a mode group |
+| `/` | Search mirrored bindings in the bottom help window |
+| `<CR>` | Activate the selected node or change a setting |
+| `<Space>` | Toggle a boolean setting or open a chooser |
+| `Tab` / `<S-Tab>` | Next / previous section |
+| `g` / `G` | First / last item |
+| `<C-d>` / `<C-u>` | Scroll the content pane |
+| `r` | Refresh data and run detection probes |
+| `R` | Delete UI overrides (Config → Effective) |
+| `?` | Help |
+| `<Esc>` | Content → tree, then close from the tree |
+| `q` | Close |
+
+Pages: Status (overview, statusline, events, warnings), Layouts (active,
+bundled, keyboard map, reverse map), Detection (current, providers,
+environment), Mappings (settings, by mode, mirrored list, filters), Cmdline
+(settings and aliases), Echo (state, mode previews, captured keys), Config
+(effective values, source, warnings) and Doctor (summary, tools,
+recommendations). Every page starts with a short explanation section. The
+Mirrored list is grouped by mode and filtered by the `/` search block in the
+separate help window at the bottom. Selecting a category automatically focuses
+its first item; moving up in the tree still returns to the category row. The
+content pane is navigable line by line, while section headings stay read-only.
+`h`/`l` switch focus exactly like `[`/`]`; the cursor moves into the focused
+pane.
+On the By mode page, `i`/`o` expands a mode, `j`/`k` walks through its bindings,
+`h` returns to the mode group and `l` enters it.
+
+Config → Effective is editable: boolean rows toggle immediately with
+`Enter`/`Space`, while enums and multi-selects open a separate picker with a
+description, examples, notes and a Cancel row. Changes are written to the
+override file and can be removed with `R` or `:PhyKeyboardConfigReset`.
+Everything else in the panel stays read-only. Provider probing runs
+asynchronously on the Providers and Doctor pages or when `r` is pressed. A
+second floating help window at the bottom holds the search block and contextual
+key hints.
+
+If you use `stay-centered.nvim` (or a similar centering plugin), add the UI
+filetypes to its skip list so it does not re-center the panel on cursor moves:
+
+```lua
+stay_centered.setup({
+  skip_filetypes = { "physical-keyboard-ui", "physical-keyboard-ui-help" },
+})
+```
+
+Highlight groups use the `PhyKeyboardUI*` prefix and are linked to built-in
+groups by default (`NormalFloat`, `FloatBorder`, `FloatTitle`, `Title`,
+`Directory`, `Visual`, `Comment`, `String`, `Number`, `Boolean`,
+`DiagnosticOk/Warn/Error/Info`, `NonText`, `WinBar`). Override any group in your
+colorscheme without patching the plugin.
 
 ## Statusline
 

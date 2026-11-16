@@ -79,6 +79,12 @@ local function print_status()
 	if status.config_source and status.config_source.file then
 		lines[#lines + 1] = ("Config source: %s"):format(status.config_source.file)
 	end
+	if status.overrides then
+		lines[#lines + 1] = ("Override file: %s%s"):format(
+			status.overrides.file,
+			status.overrides.enabled and "" or " (loading disabled)"
+		)
+	end
 
 	core.print(table.concat(lines, "\n"), vim.log.levels.INFO)
 end
@@ -158,13 +164,22 @@ function M.register(instance)
 
 	register("PhyKeyboard", function()
 		core.print(
-			("=== Physical Keyboard ===\nVersion: %s\nLayouts: %d\nCommands: :PhyKeyboardStatus, :PhyKeyboardConfig, :PhyKeyboardDoctor, :PhyKeyboardList, :PhyKeyboardUse, :PhyKeyboardRefresh, :PhyKeyboardDetect, :PhyKeyboardEcho"):format(
+			("=== Physical Keyboard ===\nVersion: %s\nLayouts: %d\nCommands: :PhyKeyboardUI, :PhyKeyboardStatus, :PhyKeyboardConfig, :PhyKeyboardConfigReset, :PhyKeyboardDoctor, :PhyKeyboardList, :PhyKeyboardUse, :PhyKeyboardRefresh, :PhyKeyboardDetect, :PhyKeyboardEcho"):format(
 				core.version,
 				#layouts.ids()
 			),
 			vim.log.levels.INFO
 		)
 	end, { nargs = 0 })
+
+	register("PhyKeyboardUI", function()
+		local ok, ui = pcall(require, "physical-keyboard.ui")
+		if not ok then
+			core.print("UI is unavailable: " .. tostring(ui), vim.log.levels.ERROR)
+			return
+		end
+		ui.open()
+	end, { nargs = 0, desc = "Open the physical-keyboard UI" })
 
 	register("PhyKeyboardStatus", print_status, { nargs = 0 })
 	register("PhyKeyboardList", print_layouts, { nargs = 0 })
@@ -287,6 +302,15 @@ function M.register(instance)
 
 	register("PhyKeyboardEditConfig", function()
 		core.edit_config()
+	end, { nargs = 0 })
+
+	register("PhyKeyboardConfigReset", function()
+		local ok, err = core.reset_overrides()
+		if ok then
+			core.print("Override file removed; configuration reloaded", vim.log.levels.INFO)
+		else
+			core.print("Could not reset overrides: " .. tostring(err), vim.log.levels.ERROR)
+		end
 	end, { nargs = 0 })
 
 	register("PhyKeyboardReload", function()

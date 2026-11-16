@@ -227,7 +227,7 @@ local function capture_originals()
 	state.orig.buf_del = vim.api.nvim_buf_del_keymap
 end
 
-local function record(global, bufnr, mode, lhs)
+local function record(global, bufnr, mode, lhs, source_lhs)
 	local key
 	if global then
 		key = "g|" .. mode .. "|" .. lhs
@@ -243,6 +243,7 @@ local function record(global, bufnr, mode, lhs)
 		bufnr = bufnr,
 		mode = mode,
 		lhs = lhs,
+		source_lhs = source_lhs or lhs,
 	}
 end
 
@@ -257,7 +258,7 @@ local function duplicate_global(mode, lhs, rhs, opts)
 			local merged = vim.deepcopy(opts or {})
 			merged.desc = MARK .. (merged.desc or lhs)
 			pcall(setter, mode, variant.lhs, rhs, merged)
-			record(true, nil, mode, variant.lhs)
+			record(true, nil, mode, variant.lhs, lhs)
 		end
 	end
 end
@@ -274,7 +275,7 @@ local function duplicate_buffer(buffer, mode, lhs, rhs, opts)
 			local merged = vim.deepcopy(opts or {})
 			merged.desc = MARK .. (merged.desc or lhs)
 			pcall(setter, buffer, mode, variant.lhs, rhs, merged)
-			record(false, bufnr, mode, variant.lhs)
+			record(false, bufnr, mode, variant.lhs, lhs)
 		end
 	end
 end
@@ -381,7 +382,7 @@ local function scan_global(modes)
 						)
 						if ok then
 							existing[variant.lhs] = true
-							record(true, nil, mode, variant.lhs)
+							record(true, nil, mode, variant.lhs, mapping.lhs)
 							created = created + 1
 						end
 					end
@@ -420,7 +421,7 @@ local function scan_buffer(bufnr, modes)
 						)
 						if ok then
 							existing[variant.lhs] = true
-							record(false, bufnr, mode, variant.lhs)
+							record(false, bufnr, mode, variant.lhs, mapping.lhs)
 							created = created + 1
 						end
 					end
@@ -458,6 +459,16 @@ end
 ---@return number
 function M.count_created()
 	return #state.created
+end
+
+--- Returns a copy of the mappings mirrored by this module.
+---@return { global: boolean, bufnr: number|nil, mode: string, lhs: string, source_lhs: string }[]
+function M.list()
+	local result = {}
+	for _, item in ipairs(state.created) do
+		result[#result + 1] = vim.deepcopy(item)
+	end
+	return result
 end
 
 ---@return boolean

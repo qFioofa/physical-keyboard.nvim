@@ -49,9 +49,13 @@ stylua lua tests
 # Health check inside Neovim
 :checkhealth physical-keyboard
 
+# Floating dashboard; Config -> Effective is editable
+:PhyKeyboardUI
+
 # Machine-readable environment report (for AI)
 :PhyKeyboardDoctor --json
 :PhyKeyboardConfig --json
+:PhyKeyboardConfigReset
 ```
 
 There is no package manager, build step, or generated code. Layout data in
@@ -62,7 +66,9 @@ There is no package manager, build step, or generated code. Layout data in
 | File | Responsibility |
 |------|----------------|
 | `lua/physical-keyboard/init.lua` | Public API, lifecycle, langmap application, events, statusline, doctor entry point |
-| `config.lua` | Defaults, file/env loading, validation, notifications |
+| `config.lua` | Defaults, file/env/override loading, validation, notifications |
+| `options.lua` | Editable option specs, choices, validation and formatting |
+| `overrides.lua` | JSON state override file, atomic writes, reset |
 | `langmap.lua` | Build/apply/restore `'langmap'`, escaping, pair counting |
 | `layouts/init.lua` | Registry, forward/reverse maps, matching, LCID normalization |
 | `layouts/data.lua` | Bundled layout data (English → native) |
@@ -71,6 +77,7 @@ There is no package manager, build step, or generated code. Layout data in
 | `detect/providers.lua` | OS/compositor adapters, selection, probing, async runner |
 | `cmdline.lua` | `cnoreabbrev` aliases and runtime add/remove |
 | `commands.lua` | All `:PhyKeyboard*` commands |
+| `ui/` | Floating dashboard (`:PhyKeyboardUI`); Config → Effective and the picker are editable |
 | `echo.lua` | Raw key diagnostic mode |
 | `health.lua` | `:checkhealth` report |
 | `doctor.lua` | JSON environment report used by AI configuration flows |
@@ -92,6 +99,9 @@ There is no package manager, build step, or generated code. Layout data in
   (`detect.async = true`) and must not block the editor.
 - On SSH the local layout is irrelevant. `detect.remote = "auto"` disables
   detection; use `active_layouts` or force a layout.
+- UI edits are stored in a JSON override file under `stdpath("state")`; never
+  rewrite the user's Lua config or `setup()` table.
+- `overrides = false` ignores that file for the whole session.
 - Detection matches the raw OS string against **all** bundled layouts and adds
   the discovered layout at runtime.
 - `fallback = "unique"` keeps only non-conflicting pairs when the layout is
