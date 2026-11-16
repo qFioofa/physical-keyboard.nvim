@@ -1,64 +1,47 @@
+<p align="center">
+  <img src="./.github/logo.png" width="150" height="150" alt="plugin-logo">
+</p>
+
 # physical-keyboard.nvim
 
-Use Neovim in your native keyboard layout without switching to English for
-Normal-mode commands.
+Use your national keyboard layout in Normal, Visual and Operator-pending modes.
+Type `сшц` and Neovim runs `ciw`; plugin shortcuts such as `<leader>ff` and
+`gcc` keep working. Insert-mode text is never translated.
 
-Type `сшц` and Neovim sees `ciw`. Type `:ц` and Neovim runs `:w`. Your plugin
-shortcuts (`<leader>ff`, `gcc`, LSP mappings, …) keep working too. Insert-mode
-text is left completely untouched.
-
-The plugin is a thin, MIT-licensed wrapper around three proven layers:
-
-- **`langmap`** — Neovim's built-in, C-level translation of Normal/Visual/
-  Operator-pending keys;
-- **a mapping mirroring layer** — inspired by
-  [langmapper.nvim](https://github.com/Wansmer/langmapper.nvim) (MIT);
-- **a layout detection layer** — small adapters for X11, Wayland compositors,
-  macOS and Windows.
-
-No external binary is downloaded and no GPL code is bundled.
+The plugin is a thin MIT wrapper around Neovim's built-in `langmap`, a mapping
+mirroring layer, platform layout detection and command-line aliases. No
+external binary is downloaded and no GPL code is bundled.
 
 ## Features
 
-- **Motions and operators** — `ciw`, `daw`, `gcc`, `gg`, `%`, `f`/`t`, marks,
-  registers, etc. are handled by `langmap`.
-- **Plugin mappings** — every mapping registered through
-  `vim.keymap.set`/`nvim_set_keymap`/`nvim_buf_set_keymap` is mirrored to the
-  national layout, including lazy-loaded plugins, `<C-…>` combinations,
-  `<Leader>` sequences and Lua callbacks.
-- **Mapping filters** — exclude noisy shortcuts, add explicit variants.
-- **Command-line** — common Ex commands get `cnoreabbrev` aliases: `:ц` → `:w`,
-  `:й` → `:q`, `:цй` → `:wq`, and so on.
-- **Automatic layout detection** — X11, Sway, Hyprland, niri, GNOME, KDE,
-  IBus, Fcitx, macOS and Windows adapters, plus a safe fallback when detection
-  is not available. Detection is asynchronous after startup and throttled.
+- **Built-in commands** — `ciw`, `daw`, `gcc`, `%`, `f`/`t`, marks and
+  registers work through `langmap`, in C.
+- **Plugin mappings** — mappings registered with `vim.keymap.set()`,
+  `nvim_set_keymap()` or `nvim_buf_set_keymap()` are mirrored to the active
+  layout, including lazy-loaded plugins, `<Leader>` and `<C-...>` mappings.
+- **Automatic detection** — niri, Sway, Hyprland, GNOME, KDE, X11, IBus,
+  Fcitx, macOS and Windows adapters. Detection is throttled and asynchronous.
 - **18 bundled layouts** — Russian, German, French, Spanish, Italian,
   Ukrainian, Belarusian, Czech, Swedish, Turkish, Greek, Hebrew, Arabic,
-  Persian, Kazakh, Korean, Dvorak and Colemak.
-- **External configuration** — keep settings in
-  `~/.config/nvim/physical-keyboard.lua`, reload them at runtime, override
-  with `PKB_*` environment variables.
-- **Statusline and events** — `statusline()`, `vim.g.physical_keyboard_layout`,
-  and `User PhysicalKeyboardLayoutChanged`.
-- **AI-friendly** — `:PhyKeyboardDoctor --json` and a complete `AGENTS.md`
-  playbook let an assistant configure the plugin for a specific user.
-- **No insert-mode interference** — literal text is never remapped.
-- **`langremap` is disabled** — mappings are not re-translated recursively.
-- **`:checkhealth physical-keyboard`** — shows the detected provider, current
-  layout, langmap size and mirrored mappings.
-- **`:PhyKeyboardUI`** — a floating dashboard with a tree of status,
-  layouts, detection, mappings, cmdline, echo, config and doctor pages.
+  Persian, Kazakh, Korean, Dvorak, Colemak. Custom layouts are supported.
+- **Command-line aliases** — `:ц` → `:w`, `:цй` → `:wq`, and more via
+  `cnoreabbrev`.
+- **Configuration** — plugin `opts`, an external Lua file, UI overrides and
+  `PKB_*` environment variables.
+- **Statusline, events, echo mode, `:checkhealth`** and a floating dashboard
+  (`:PhyKeyboardUI`).
+- **Insert mode is untouched**, and `langremap` stays off.
 
 ## Requirements
 
-- Neovim **0.10+** (LuaJIT).
-- Optional, but recommended: a layout detection tool for your environment (see
-  the table below). Without it the plugin still translates motions using a safe
-  merged map.
+- Neovim 0.10+
+- Optional detection helper for your environment (`xkb-switch` on X11,
+  `im-select` on macOS/Windows). Without one, translation still works with a
+  safe merged map.
 
 ## Installation
 
-With [lazy.nvim](https://github.com/folke/lazy.nvim):
+lazy.nvim:
 
 ```lua
 {
@@ -70,12 +53,7 @@ With [lazy.nvim](https://github.com/folke/lazy.nvim):
 }
 ```
 
-`opts` makes lazy.nvim call `require("physical-keyboard").setup(opts)`
-automatically. `VeryLazy` is recommended so that mappings from other plugins
-already exist when the mirroring layer starts. Mappings created later are still
-caught through the keymap API hook.
-
-Manual setup:
+Manual:
 
 ```lua
 require("physical-keyboard").setup({
@@ -83,10 +61,24 @@ require("physical-keyboard").setup({
 })
 ```
 
+`VeryLazy` lets other plugins register their mappings first; mappings created
+later are still caught by the keymap hook.
+
 ## Quick start
 
+Russian + English with automatic switching (recommended):
+
 ```lua
--- Russian only, no detection:
+require("physical-keyboard").setup({
+  active_layouts = { "ru" },
+  fallback = "unique",
+  detect = { enabled = true },
+})
+```
+
+Russian only, no detection:
+
+```lua
 require("physical-keyboard").setup({
   active_layouts = { "ru" },
   detect = { enabled = false },
@@ -94,362 +86,84 @@ require("physical-keyboard").setup({
 })
 ```
 
+Several layouts:
+
 ```lua
--- Russian + English with automatic switching:
 require("physical-keyboard").setup({
-  active_layouts = { "ru" },
-  detect = { enabled = true },
+  active_layouts = { "ru", "de", "fr" },
   fallback = "unique",
 })
 ```
 
-See [examples/](examples/) for more recipes.
+Remote Neovim over SSH (local layout is irrelevant):
+
+```lua
+require("physical-keyboard").setup({
+  active_layouts = { "ru" },
+  detect = { remote = "auto" }, -- detection off over SSH
+  fallback = "ru",
+})
+```
 
 ## Configuration
+
+Only the commonly changed keys are shown; every option lives in
+`:help physical-keyboard-config`.
 
 ```lua
 require("physical-keyboard").setup({
   enable = true,
-  notify = "errors",          -- "all" | "errors" | "off"
-
-  -- Layouts you use. Defaults to { "ru" }.
-  -- Use an empty table ({}) to enable every bundled layout.
-  active_layouts = { "ru" },
-
-  -- What to do when the active layout is unknown:
-  --   "unique"  - keep only non-conflicting pairs
-  --   "<id>"    - always use this layout
-  --   false     - leave 'langmap' empty
-  fallback = "unique",
-
-  toggle_key = false,         -- e.g. "<leader>tk"
+  notify = "errors",             -- "all" | "errors" | "off"
+  active_layouts = { "ru" },     -- {} enables every bundled layout
+  fallback = "unique",           -- "unique" | "<id>" | false
+  toggle_key = false,            -- e.g. "<leader>tk"
+  config_file = false,           -- true or a custom path
+  overrides = true,              -- UI state in stdpath("state")
 
   detect = {
     enabled = true,
-    provider = nil,           -- force one adapter, e.g. "niri"
-    providers = nil,          -- allowlist, e.g. { "niri", "sway" }
-    remote = "auto",          -- "auto" disables detection over SSH
-    min_interval = 300,       -- ms; throttles detection checks
-    timeout = 500,            -- ms per detection command
-    events = { "FocusGained", "VimResume", "InsertLeave" },
+    remote = "auto",
+    min_interval = 300,
     async = true,
-    on_change = nil,          -- function(info) ... end
-  },
-
-  langmap = {
-    enabled = true,
+    events = { "FocusGained", "VimResume", "InsertLeave" },
   },
 
   mappings = {
     enabled = true,
-    hack_keymap = true,       -- wrap nvim_*_set_keymap to catch lazy plugins
-    automapping = true,       -- mirror already registered mappings
-    modes = { "n", "x", "s", "o" }, -- add "i" for Insert-mode plugin mappings
-    exclude = {},             -- LHS strings / Lua patterns
-    extra = {},               -- [english lhs] = native lhs
+    modes = { "n", "x", "s", "o" },
+    exclude = {},                -- LHS strings or Lua patterns
+    extra = {},                  -- [english lhs] = native lhs
   },
 
   cmdline = {
     enabled = true,
-    aliases = {},             -- extra English Ex commands
-    extra = {},               -- [native] = English
-  },
-
-  echo = {
-    enabled = false,
-    mode = "all",
-  },
-
-  -- Runtime changes made from the UI are stored here, never in your config.
-  -- Set false to ignore the override file (or { enabled = false }).
-  overrides = true,
-})
-```
-
-`notify = false` means `"errors"`. Use `"off"` to silence the plugin entirely.
-
-### External config file
-
-Keep settings outside `init.lua`:
-
-```lua
-require("physical-keyboard").setup({
-  config_file = true, -- ~/.config/nvim/physical-keyboard.lua
-})
-```
-
-A custom path is also accepted: `config_file = "~/.config/nvim/pkb.lua"`.
-
-The file returns a table:
-
-```lua
-return {
-  active_layouts = { "ru" },
-  detect = { enabled = true },
-}
-```
-
-Commands:
-
-- `:PhyKeyboardEditConfig` — open or create the file (with a template);
-- `:PhyKeyboardReload` — re-run `setup()` and re-read the file;
-- `:PhyKeyboardConfig [--json]` — show the effective configuration.
-
-Precedence: defaults → config file → `setup()` options → override file →
-environment variables.
-
-### Override file
-
-Changes made from the UI are saved to
-`stdpath("state")/physical-keyboard/overrides.json` (or `PKB_OVERRIDES`). The
-file is JSON, so comments and formatting in your Lua configuration are never
-touched. Disable loading it with:
-
-```lua
-require("physical-keyboard").setup({
-  overrides = false,
-})
-```
-
-`:PhyKeyboardConfigReset` (or `R` on Config → Effective) deletes the file and
-reloads the base configuration. When override loading is disabled, UI changes
-are session-only.
-
-### Environment variables
-
-| Variable | Effect |
-|----------|--------|
-| `PKB_CONFIG` | load a config file even without `config_file` |
-| `PKB_LAYOUT` | force layout(s) for this run, comma-separated |
-| `PKB_DISABLE=1` | disable the plugin for this run |
-| `PKB_DEBUG=1` | enable echo, debug mode and all notifications |
-| `PKB_NOTIFY` | `all`, `errors` or `off` |
-| `PKB_OVERRIDES` | custom path for the JSON override file |
-
-```sh
-PKB_LAYOUT=de nvim
-PKB_DISABLE=1 nvim
-PKB_DEBUG=1 nvim
-```
-
-Set `env = false` to ignore all `PKB_*` variables.
-
-## Migrating from 0.x
-
-- `active_layouts` is still accepted (string or list).
-- `userLayouts` is still accepted. A layout is now a plain table instead of a
-  `Layout` object:
-
-```lua
-require("physical-keyboard").setup({
-  active_layouts = { "my-layout" },
-  userLayouts = {
-    ["my-layout"] = {
-      title = "My layout",
-      names = { "my-layout", "My Layout" }, -- used by detection
-      map = {
-        ["q"] = "й",
-        ["w"] = "ц",
-        -- English character -> native character
-      },
-    },
+    aliases = {},                -- extra English Ex commands
+    extra = {},                  -- [native] = English
   },
 })
 ```
 
-Uppercase variants are generated automatically for cased letters.
-
-## Default layouts
-
-| id | Layout | id | Layout |
-|----|--------|----|--------|
-| `ru` | Russian | `uk` | Ukrainian |
-| `de` | German (QWERTZ) | `by` | Belarusian |
-| `fr` | French (AZERTY) | `cs` | Czech |
-| `es` | Spanish | `sv` | Swedish |
-| `it` | Italian | `tr` | Turkish |
-| `gr` | Greek | `he` | Hebrew |
-| `ar` | Arabic | `fa` | Persian |
-| `kk` | Kazakh | `kr` | Korean |
-| `dvorak` | Dvorak | `colemak` | Colemak |
-
-Layout data is generated from
-[ai/convert-layout](https://github.com/ai/convert-layout) (MIT).
-
-## Layout detection
-
-| Environment | Adapter |
-|-------------|---------|
-| niri | `niri msg -j keyboard-layouts` |
-| Sway / wlroots | `swaymsg -t get_inputs -r` |
-| Hyprland | `hyprctl devices -j` |
-| GNOME | `gsettings get org.gnome.desktop.input-sources mru-sources` |
-| KDE | `qdbus org.kde.keyboard …getLayout` |
-| X11 | `xkb-switch -p`, then `setxkbmap -query` |
-| IBus | `ibus engine` |
-| Fcitx | `fcitx5-remote -n` |
-| macOS | `im-select`, then `defaults read com.apple.HIToolbox` |
-| Windows | `im-select.exe`, then PowerShell |
-
-Detection runs on the configured events, is throttled by `min_interval`, and is
-asynchronous by default. It also switches `langmap` back to empty when the OS
-reports a plain English layout. A layout reported by the adapter is matched
-against **all** bundled layouts and added at runtime, so a German user gets
-working translations even with the default `active_layouts = { "ru" }`.
-
-On SSH the local layout is irrelevant. `detect.remote = "auto"` disables
-detection; use `active_layouts`, `fallback`, or `:PhyKeyboardUse`.
-
-If no adapter works, `fallback = "unique"` keeps a conflict-free subset of the
-active layouts so motions still work.
-
-`:PhyKeyboardDoctor [--json]` lists every adapter, its raw answer and the
-available helper binaries. `:PhyKeyboardDetect` shows the active result.
-
-## Mapping mirroring
-
-Every mapping is duplicated to the national layout. `<Plug>`, `<Sid>` and
-`<Snr>` mappings are skipped.
-
-```lua
--- Disable mirroring; only built-in motions are translated:
-mappings = { enabled = false },
-
--- Do not mirror Telescope leader shortcuts:
-mappings = { exclude = { "<Leader>f", "<C%-" } },
-
--- Add an explicit native variant:
-mappings = { extra = { ["<Leader>zz"] = "<Leader>ZZ" } },
-```
-
-`exclude` entries are compared to the raw LHS and used as Lua patterns.
-`exclude` wins over `extra`.
-
-## Command-line aliases
-
-Common Ex commands are registered with `cnoreabbrev`: `:ц` → `:w`,
-`:цй` → `:wq`, and so on.
-
-```lua
-cmdline = {
-  aliases = { "tabnew", "resize" }, -- extra English commands
-  extra = { ["цц"] = "w" },         -- explicit native -> English
-},
-```
-
-Runtime:
-
-```vim
-:PhyKeyboardAliases
-:PhyKeyboardAliases add цц w
-:PhyKeyboardAliases remove цц
-```
+Precedence: defaults → config file → `setup()` opts → UI overrides →
+`PKB_*` variables. The override file is written by the UI, never by editing
+your Lua config.
 
 ## Commands
 
-| Command | Description |
-|---------|-------------|
-| `:PhyKeyboard` | General information |
-| `:PhyKeyboardUI` | Read-only floating dashboard |
-| `:PhyKeyboardStatus` | Detection, language map and mapping status |
-| `:PhyKeyboardConfig [--json]` | Effective configuration |
-| `:PhyKeyboardConfigReset` | Delete UI overrides and reload the base config |
-| `:PhyKeyboardDoctor [--json]` | Full environment report |
-| `:PhyKeyboardList` | List bundled layouts |
-| `:PhyKeyboardDetect` | Show the raw detection result |
-| `:PhyKeyboardEnable` / `:PhyKeyboardDisable` | Enable or disable the plugin |
-| `:PhyKeyboardToggle` | Toggle the plugin |
-| `:PhyKeyboardUse <layout>` | Force a layout (`en` disables translation) |
-| `:PhyKeyboardAuto` | Return to automatic detection |
-| `:PhyKeyboardRefresh` | Re-run detection now |
-| `:PhyKeyboardMappings` | Re-mirror all registered mappings |
-| `:PhyKeyboardAliases` | List or edit command-line aliases |
-| `:PhyKeyboardEcho [on\|off]` | Toggle the echo keyboard |
-| `:PhyKeyboardEchoMode [mode]` | Show or set the echo mode |
-| `:PhyKeyboardNotify [mode]` | `all`, `errors`, `off` |
-| `:PhyKeyboardCmdline [on\|off]` | Toggle command-line aliases |
-| `:PhyKeyboardEditConfig` | Open or create the external config file |
-| `:PhyKeyboardReload` | Reload `setup()` and the external config file |
-
-Backwards-compatible commands: `:PhyKeyboardEnableLayout`,
-`:PhyKeyboardDisableLayout`, `:PhyKeyboardSet`.
-
-## UI panel
-
-`:PhyKeyboardUI` opens a floating dashboard. The left tree groups
-pages by section; the right side renders the selected page. Root nodes act as
-tabs: `Tab` and `S-Tab` switch sections.
-
-```text
-physical-keyboard › Status › Overview
-╭ Tree ──────────────╮ ╭ Overview ──────────────────────────────────────╮
-│ ▾ Status           │ │ State       ● enabled      Notify   errors    │
-│   ● Overview       │ │ Layout      RU             Provider niri      │
-│   ○ Statusline     │ │ langmap     74 pairs       Mappings 217       │
-│   ○ Events         │ │ Cmdline     37 aliases     Echo     on/debug  │
-│ ▸ Layouts          │ │ Health      ✓ langmap  ✓ detection  ✓ config │
-╰────────────────────╯ ╰────────────────────────────────────────────────╯
-```
-
-Default keymaps inside the panel:
-
-| Keys | Action |
-|------|--------|
-| `j` / `k`, arrows | Move in the tree or between content lines |
-| `h` / `l` | Focus the tree / content pane (same as `[` / `]`) |
-| `<Left>` / `<Right>` | Collapse / expand in the tree; parent / enter a mode group in content |
-| `[` / `]` | Focus the tree / content pane |
-| `i` / `o` | Open the selected item / expand a mode group |
-| `/` | Search mirrored bindings in the bottom help window |
-| `<CR>` | Activate the selected node or change a setting |
-| `<Space>` | Toggle a boolean setting or open a chooser |
-| `Tab` / `<S-Tab>` | Next / previous section |
-| `g` / `G` | First / last item |
-| `<C-d>` / `<C-u>` | Scroll the content pane |
-| `r` | Refresh data and run detection probes |
-| `R` | Delete UI overrides (Config → Effective) |
-| `?` | Help |
-| `<Esc>` | Content → tree, then close from the tree |
-| `q` | Close |
-
-Pages: Status (overview, statusline, events, warnings), Layouts (active,
-bundled, keyboard map, reverse map), Detection (current, providers,
-environment), Mappings (settings, by mode, mirrored list, filters), Cmdline
-(settings and aliases), Echo (state, mode previews, captured keys), Config
-(effective values, source, warnings) and Doctor (summary, tools,
-recommendations). Every page starts with a short explanation section. The
-Mirrored list is grouped by mode and filtered by the `/` search block in the
-separate help window at the bottom. Selecting a category automatically focuses
-its first item; moving up in the tree still returns to the category row. The
-content pane is navigable line by line, while section headings stay read-only.
-`h`/`l` switch focus exactly like `[`/`]`; the cursor moves into the focused
-pane.
-On the By mode page, `i`/`o` expands a mode, `j`/`k` walks through its bindings,
-`h` returns to the mode group and `l` enters it.
-
-Config → Effective is editable: boolean rows toggle immediately with
-`Enter`/`Space`, while enums and multi-selects open a separate picker with a
-description, examples, notes and a Cancel row. Changes are written to the
-override file and can be removed with `R` or `:PhyKeyboardConfigReset`.
-Everything else in the panel stays read-only. Provider probing runs
-asynchronously on the Providers and Doctor pages or when `r` is pressed. A
-second floating help window at the bottom holds the search block and contextual
-key hints.
-
-If you use `stay-centered.nvim` (or a similar centering plugin), add the UI
-filetypes to its skip list so it does not re-center the panel on cursor moves:
-
-```lua
-stay_centered.setup({
-  skip_filetypes = { "physical-keyboard-ui", "physical-keyboard-ui-help" },
-})
-```
-
-Highlight groups use the `PhyKeyboardUI*` prefix and are linked to built-in
-groups by default (`NormalFloat`, `FloatBorder`, `FloatTitle`, `Title`,
-`Directory`, `Visual`, `Comment`, `String`, `Number`, `Boolean`,
-`DiagnosticOk/Warn/Error/Info`, `NonText`, `WinBar`). Override any group in your
-colorscheme without patching the plugin.
+| Command                                         | Purpose                                    |
+| ----------------------------------------------- | ------------------------------------------ |
+| `:PhyKeyboardStatus`                            | Current layout, langmap size, mappings     |
+| `:PhyKeyboardDetect`                            | Raw OS detection result                    |
+| `:PhyKeyboardDoctor [--json]`                   | Full environment report                    |
+| `:PhyKeyboardConfig [--json]`                   | Effective configuration                    |
+| `:PhyKeyboardUI`                                | Floating dashboard                         |
+| `:PhyKeyboardUse <id>`                          | Force a layout (`en` disables translation) |
+| `:PhyKeyboardAuto`                              | Return to detection                        |
+| `:PhyKeyboardRefresh`                           | Re-run layout detection                    |
+| `:PhyKeyboardEnable/Disable/Toggle`             | Control the plugin                         |
+| `:PhyKeyboardMappings`                          | Re-mirror registered mappings              |
+| `:PhyKeyboardEditConfig` / `:PhyKeyboardReload` | External config file                       |
+| `:PhyKeyboardConfigReset`                       | Delete UI overrides                        |
+| `:PhyKeyboardEcho [on\|off]`                    | Raw key diagnostic mode                    |
 
 ## Statusline
 
@@ -457,172 +171,61 @@ colorscheme without patching the plugin.
 vim.o.statusline = "%{v:lua.require'physical-keyboard'.statusline()} %f"
 ```
 
-lualine:
+The component returns `RU`, `EN`, `--`, or a custom value via
+`statusline({ uppercase = false, english = "EN", unknown = "--" })`. The same
+state is exposed as `vim.g.physical_keyboard_layout` and the
+`PhysicalKeyboardLayoutChanged` event.
 
-```lua
-{
-  function()
-    return require("physical-keyboard").statusline()
-  end,
-}
-```
+## Examples and reference files
 
-Options:
+Start from the smallest matching file:
 
-```lua
-require("physical-keyboard").statusline({
-  uppercase = false,
-  english = "ENG",
-  unknown = "--",
-  prefix = "",
-  suffix = "",
-})
-```
+| File                                                       | Use it for                  |
+| ---------------------------------------------------------- | --------------------------- |
+| [`examples/lazy.lua`](examples/lazy.lua)                   | lazy.nvim spec              |
+| [`examples/russian-only.lua`](examples/russian-only.lua)   | one layout, no detection    |
+| [`examples/multilingual.lua`](examples/multilingual.lua)   | several layouts             |
+| [`examples/remote.lua`](examples/remote.lua)               | SSH / remote Neovim         |
+| [`examples/config-file.lua`](examples/config-file.lua)     | external config file        |
+| [`examples/custom-layout.lua`](examples/custom-layout.lua) | custom layout map           |
+| [`examples/mappings.lua`](examples/mappings.lua)           | exclusions, extras, aliases |
+| [`examples/lualine.lua`](examples/lualine.lua)             | lualine component           |
 
-`layout_info()` returns the layout id, raw OS value, provider and English flag.
-`vim.g.physical_keyboard_layout` contains `ru`, `de`, `en` or `""`.
+Reference documentation:
 
-## Events
+- `doc/physical-keyboard.txt` — complete English help.
+- `doc/physical-keyboard.ru.txt` — full Russian translation.
+- `AGENTS.md` — architecture, invariants and the AI configuration playbook.
+- `lua/physical-keyboard/config.lua` — defaults and validation.
+- `lua/physical-keyboard/layouts/data.lua` — bundled layout maps.
 
-- `PhysicalKeyboardEnabled`
-- `PhysicalKeyboardDisabled`
-- `PhysicalKeyboardLayoutChanged`
-- `PhysicalKeyboardConfigReloaded`
+## Important notes
 
-```lua
-vim.api.nvim_create_autocmd("User", {
-  pattern = "PhysicalKeyboardLayoutChanged",
-  callback = function(args)
-    vim.g.my_layout = args.data.id or "en"
-  end,
-})
-```
-
-The same data is passed to `detect.on_change`.
-
-## AI configuration
-
-An assistant can configure the plugin from a natural-language request. The
-full playbook lives in [AGENTS.md](AGENTS.md). The machine-readable entry point
-is:
-
-```vim
-:PhyKeyboardDoctor --json
-```
-
-or, from a shell:
-
-```sh
-nvim --headless \
-  -c 'lua print(vim.json.encode(require("physical-keyboard").doctor({ probe = true })))' \
-  -c qa 2>&1
-```
-
-The report contains the OS/session, available detection adapters and binaries,
-the effective config and source, active layouts, and recommendations. The
-assistant should choose a provider, patch only the `opts` table, and verify with
-`:PhyKeyboardStatus`, `:PhyKeyboardDetect`, `:PhyKeyboardConfig --json`, and
-`:checkhealth physical-keyboard`.
-
-## Echo keyboard
-
-```vim
-:PhyKeyboardEcho on
-:PhyKeyboardEchoMode debug
-```
-
-Modes: `all`, `byte`, `hex`, `raw`, `code`, `minimal`, `debug`.
-
-## How it works
-
-1. `langmap` translates characters typed in Normal/Visual/Select/Operator-pending
-   modes. Neovim does this in C, so every built-in command is covered.
-2. Because mappings are matched on their raw left-hand side, the plugin mirrors
-   every registered mapping to the active layouts. This is done by wrapping the
-   low-level `nvim_set_keymap`/`nvim_buf_set_keymap` API, so lazy-loaded plugins
-   are covered as well.
-3. `langmap` is disabled while entering a command line, so common Ex commands
-   are translated with `cnoreabbrev` aliases.
-4. A platform adapter reports the active OS layout and selects the matching
-   `langmap`.
-
-### Entering the command line
-
-`langmap` is **physical-position based**: every character is translated to the
-key at the same position on a US layout. On Russian ЙЦУКЕН the printed `:`
-lives on Shift+6, while the US `:` lives on Shift+; — so to open the command
-line you press the physical US `:` position, which produces `Ж`, and `langmap`
-turns it into `:`.
-
-For example, to save and quit from a Russian layout:
-
-```text
-Ж ц й Enter      " Ж -> :, цй -> wq
-```
-
-If you prefer to keep the labelled `:` key working as a command-line key, add a
-custom layout map that omits the conflicting pair, or bind `:` explicitly.
-
-## Help
-
-```vim
-:help physical-keyboard
-:help physical-keyboard-ru
-```
-
-The Russian help file is a full translation:
-`doc/physical-keyboard.ru.txt`.
-
-## Troubleshooting
-
-- **Shortcuts do not work in Normal mode** — check `:PhyKeyboardStatus` and
-  run `:PhyKeyboardMappings` after lazy-loaded plugins have loaded.
-- **`:wq` does not work from a Russian layout** — use the physical US `:`
-  position (`Ж` on ЙЦУКЕН): `Ж ц й Enter`.
-- **E357: 'langmap': Matching character missing** — a plugin bug; please report
-  it with `:PhyKeyboardDoctor --json`.
-- **Detection is disabled over SSH** — intentional with `detect.remote =
-  "auto"`. Set `detect.remote = false` or use `active_layouts`.
-- **The plugin does nothing** — `setup()` was not called. With lazy.nvim use
-  `opts` or a `config` function.
-- **Too many notifications** — `notify = "errors"` or `"off"`.
-
-## Limitations
-
-- `langmap` is character-based, not physical-keycode-based. Layouts that share
-  Latin characters but move them (`de` `z`/`y`, `fr` `a`/`q`) rely on detection
-  to pick the right map.
-- If several layouts are active and detection is unavailable, only
-  non-conflicting pairs can be used safely (`fallback = "unique"`).
-- Command-line translation is alias-based; arbitrary Ex commands and search
-  patterns are not rewritten.
+- `langmap` is physical: on Russian ЙЦУКЕН the US `:` position produces `Ж`.
+  To save and quit type `Ж ц й Enter` (`:` `wq`).
+- An English OS layout disables translation; it never falls back to a national
+  layout.
 - Insert-mode literal text is intentionally never translated.
-- Windows detection without `im-select.exe` is best-effort (PowerShell reports
-  the preferred language, not always the active layout).
+- Command-line translation is alias-based; arbitrary Ex commands are not
+  rewritten.
 
-## Development
+## Verify
+
+```vim
+:PhyKeyboardStatus
+:PhyKeyboardDetect
+:checkhealth physical-keyboard
+```
 
 ```sh
 nvim --headless --clean -u NONE -l tests/test_all.lua
 ```
 
-For interactive checks (headless `feedkeys` does not apply `langmap`):
-
-```sh
-nvim --clean -n -u tests/minimal_init.lua file.txt
-```
-
-See [AGENTS.md](AGENTS.md) for architecture, invariants, manual testing and
-release guidance.
-
 ## License
 
-MIT. See [LICENSE](LICENSE).
-
-Credits:
-
-- [ai/convert-layout](https://github.com/ai/convert-layout) — layout data (MIT).
-- [Wansmer/langmapper.nvim](https://github.com/Wansmer/langmapper.nvim) —
-  mapping mirroring approach (MIT).
-- [mrsobakin/multilayout.nvim](https://github.com/mrsobakin/multilayout.nvim) —
-  unique-submap idea (GPL-3.0; no code copied).
+MIT. Layout data from [ai/convert-layout](https://github.com/ai/convert-layout)
+(MIT); mapping mirroring inspired by
+[Wansmer/langmapper.nvim](https://github.com/Wansmer/langmapper.nvim) (MIT);
+unique-submap idea from
+[mrsobakin/multilayout.nvim](https://github.com/mrsobakin/multilayout.nvim)
+(GPL-3.0, no code copied).
