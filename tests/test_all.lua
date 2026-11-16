@@ -925,6 +925,151 @@ do
 end
 
 ---------------------------------------------------------------------------
+-- 17. which-key integration
+---------------------------------------------------------------------------
+do
+	print("\n== which-key integration ==")
+	disable()
+
+	local invalid = config.resolve({
+		which_key = { enabled = "yes", display = "sometimes", separator = "" },
+	})
+	eq(invalid.which_key.display, nil, "invalid which-key display falls back to hide")
+	eq(invalid.which_key.separator, "\\", "empty separator falls back to a backslash")
+	truthy(#invalid.warnings > 0, "invalid which-key options warn")
+	eq(config.resolve({ which_key = false }).which_key.enabled, false, "which_key=false disables it")
+	truthy(options.spec("which_key.alongside") ~= nil, "which-key options are editable")
+	local separator, separator_err = options.normalize(options.spec("which_key.separator"), "|")
+	eq(separator, "|", "which-key separator accepts a custom string")
+	eq(separator_err, nil, "which-key separator validation succeeds")
+
+	local which_key = require("physical-keyboard.which_key")
+	local fake_cfg = {
+		loaded = true,
+		version = "3.17.0",
+		mappings = {
+			{ lhs = "<Leader>wkt", group = true, desc = "find", mode = "n" },
+		},
+	}
+	local cleared = 0
+	local fake_wk = {
+		_queue = {},
+		add = function() end,
+	}
+	local saved = {
+		wk = package.loaded["which-key"],
+		cfg = package.loaded["which-key.config"],
+		mp = package.loaded["which-key.mappings"],
+		buf = package.loaded["which-key.buf"],
+	}
+	package.loaded["which-key"] = fake_wk
+	package.loaded["which-key.config"] = fake_cfg
+	package.loaded["which-key.mappings"] = {
+		parse = function(specs)
+			return vim.deepcopy(specs)
+		end,
+	}
+	package.loaded["which-key.buf"] = {
+		clear = function()
+			cleared = cleared + 1
+		end,
+	}
+
+	mappings.setup({ active_ids = { "ru" } })
+	mappings.hack()
+	vim.keymap.set("n", "<Leader>wktff", "<cmd>echo 1<cr>", { desc = "Find files" })
+	mappings.unhack()
+	which_key.setup({ enabled = true })
+	which_key.refresh()
+
+	local function find_spec(lhs)
+		for _, spec in ipairs(fake_cfg.mappings) do
+			if spec.lhs == lhs then
+				return spec
+			end
+		end
+		return nil
+	end
+
+	local hidden = find_spec("<Leader>цлеаа")
+	truthy(hidden and hidden.hidden, "default which-key display hides mirrored mappings")
+	truthy(find_spec("<Leader>цле") == nil, "hidden mode does not create a mirror group")
+	truthy(cleared > 0, "which-key buffer cache is cleared")
+
+	which_key.setup({ enabled = true, relative_group = true })
+	which_key.refresh()
+	local group = find_spec("<Leader>цле")
+	truthy(group and group.group == "find", "relative_group copies the original group label")
+	local visible = find_spec("<Leader>цлеаа")
+	truthy(visible and visible.desc == "Find files", "relative_group shows the original description")
+	truthy(not visible.hidden, "relative_group mapping is visible")
+
+	which_key.setup({ enabled = true, relative_group = true, alongside = true, separator = "\\" })
+	which_key.refresh()
+	local alongside = find_spec("<Leader>wktff")
+	truthy(
+		alongside
+			and alongside.desc:find("Find files", 1, true)
+			and alongside.desc:find("\\", 1, true)
+			and alongside.desc:find("<Leader>цлеаа", 1, true),
+		"alongside appends mirrored keys to the original label"
+	)
+	truthy(find_spec("<Leader>цле") == nil, "alongside takes precedence over relative_group")
+	local hidden_along = find_spec("<Leader>цлеаа")
+	truthy(hidden_along and hidden_along.hidden, "alongside hides the separate mirrored entry")
+
+	which_key.cleanup()
+	local leftovers = 0
+	for _, spec in ipairs(fake_cfg.mappings) do
+		if spec._pkb then
+			leftovers = leftovers + 1
+		end
+	end
+	eq(leftovers, 0, "which-key cleanup removes registered specs")
+
+	which_key.setup({ enabled = true })
+	which_key.refresh()
+	which_key.setup({ enabled = false })
+	local disabled_leftovers = 0
+	for _, spec in ipairs(fake_cfg.mappings) do
+		if spec._pkb then
+			disabled_leftovers = disabled_leftovers + 1
+		end
+	end
+	eq(disabled_leftovers, 0, "disabling which_key removes registered specs")
+
+	local v2_calls = {}
+	package.loaded["which-key"] = {
+		register = function(spec, opts)
+			v2_calls[#v2_calls + 1] = { spec = spec, opts = opts }
+		end,
+	}
+	package.loaded["which-key.config"] = nil
+	package.loaded["which-key.mappings"] = nil
+	package.loaded["which-key.buf"] = nil
+	which_key.setup({ enabled = true })
+	which_key.refresh()
+	truthy(#v2_calls > 0, "which-key 2.x uses the legacy register API")
+	local v2_hidden = nil
+	for _, call in ipairs(v2_calls) do
+		if call.spec["<Leader>цлеаа"] then
+			v2_hidden = call.spec["<Leader>цлеаа"]
+			eq(call.opts.mode, "n", "which-key 2.x receives the mapping mode")
+		end
+	end
+	truthy(v2_hidden and v2_hidden.hidden, "which-key 2.x hides mirrored mappings")
+
+	which_key.cleanup()
+	mappings.cleanup()
+	pcall(vim.keymap.del, "n", "<Leader>wktff")
+
+	package.loaded["which-key"] = saved.wk
+	package.loaded["which-key.config"] = saved.cfg
+	package.loaded["which-key.mappings"] = saved.mp
+	package.loaded["which-key.buf"] = saved.buf
+end
+
+---------------------------------------------------------------------------
 -- Summary
 ---------------------------------------------------------------------------
 print(("\n%d passed, %d failed"):format(passed, failed))

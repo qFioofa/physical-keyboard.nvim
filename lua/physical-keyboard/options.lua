@@ -251,6 +251,61 @@ M.specs = {
 		key = mode_key,
 	},
 	{
+		path = "which_key.enabled",
+		group = "Which-key",
+		kind = "bool",
+		label = "which_key.enabled",
+		description = "Let physical-keyboard describe mirrored mappings in which-key.",
+		example = "Disable to restore which-key's default listing of mirrored keys.",
+		notes = "Only display specs are added; no keymaps are created or removed.",
+	},
+	{
+		path = "which_key.display",
+		group = "Which-key",
+		kind = "enum",
+		label = "which_key.display",
+		description = "What to do with mirrored mappings that are not shown alongside or in a group.",
+		example = "hide keeps only the original English entries.",
+		notes = "nil and hide are equivalent; set which_key.enabled = false to show mirrored entries again.",
+		choices = function()
+			return {
+				{
+					value = "hide",
+					short = "hide",
+					label = "hide — only original mappings are listed",
+					unset = true,
+				},
+			}
+		end,
+	},
+	{
+		path = "which_key.relative_group",
+		group = "Which-key",
+		kind = "bool",
+		label = "which_key.relative_group",
+		description = "Group mirrored mappings under the translated prefix with the original group label.",
+		example = "<leader>f find becomes a <leader>а group labelled find.",
+		notes = "Falls back to hiding the mirror when the original group cannot be discovered.",
+	},
+	{
+		path = "which_key.alongside",
+		group = "Which-key",
+		kind = "bool",
+		label = "which_key.alongside",
+		description = "Append mirrored keys to the original which-key label.",
+		example = "Find files \\ ъъаа.",
+		notes = "Takes precedence over relative_group and hiding.",
+	},
+	{
+		path = "which_key.separator",
+		group = "Which-key",
+		kind = "string",
+		label = "which_key.separator",
+		description = "Separator between the original label and mirrored keys in alongside mode.",
+		example = "\\",
+		notes = "Only used when which_key.alongside is enabled.",
+	},
+	{
 		path = "cmdline.enabled",
 		group = "Cmdline",
 		kind = "bool",
@@ -332,6 +387,10 @@ function M.get(cfg, path)
 		local value = nested(cfg, path)
 		return value == nil and "unique" or value
 	end
+	if path == "which_key.display" then
+		local value = nested(cfg, path)
+		return value == nil and "hide" or value
+	end
 	if spec.kind == "bool" then
 		local value = nested(cfg, path)
 		return value == true
@@ -363,6 +422,13 @@ function M.normalize(spec, value)
 			return nil, nil, true
 		end
 		return choice.value, nil, false
+	end
+
+	if spec.kind == "string" then
+		if type(value) ~= "string" or value == "" then
+			return nil, "expected a non-empty string", false
+		end
+		return value, nil, false
 	end
 
 	if spec.kind == "multi" then
@@ -405,6 +471,9 @@ function M.format(spec, cfg)
 	local value = M.get(cfg, spec.path)
 	if spec.kind == "bool" then
 		return value and "on" or "off", value and "PhyKeyboardUIOK" or "PhyKeyboardUIMuted"
+	end
+	if spec.kind == "string" then
+		return tostring(value or ""), "PhyKeyboardUIValue"
 	end
 	if spec.kind == "enum" then
 		local choice = find_choice(M.choices(spec, cfg), value)

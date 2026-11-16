@@ -73,6 +73,7 @@ There is no package manager, build step, or generated code. Layout data in
 | `layouts/init.lua` | Registry, forward/reverse maps, matching, LCID normalization |
 | `layouts/data.lua` | Bundled layout data (English → native) |
 | `mappings.lua` | Mirror mappings, keymap API hook, exclusions and extras |
+| `which_key.lua` | which-key 3.x/2.x presentation: hide, relative groups, alongside labels |
 | `detect/init.lua` | Throttling, remote policy, sync/async detection state |
 | `detect/providers.lua` | OS/compositor adapters, selection, probing, async runner |
 | `cmdline.lua` | `cnoreabbrev` aliases and runtime add/remove |
@@ -466,8 +467,9 @@ mappings = {
 ## Configuration reference
 
 Top level: `config_file`, `env`, `enable`, `notify`, `active_layouts`,
-`fallback`, `toggle_key`, `detect`, `langmap`, `mappings`, `cmdline`, `echo`.
-`env = false` ignores `PKB_*` variables (including `PKB_CONFIG`).
+`fallback`, `toggle_key`, `detect`, `langmap`, `mappings`, `which_key`,
+`cmdline`, `echo`.  `env = false` ignores `PKB_*` variables (including
+`PKB_CONFIG`).
 
 `detect`: `enabled`, `provider`, `providers`, `remote`, `min_interval`,
 `timeout`, `events`, `async`, `on_change`.
@@ -475,6 +477,11 @@ Top level: `config_file`, `env`, `enable`, `notify`, `active_layouts`,
 `mappings`: `enabled`, `hack_keymap`, `automapping`, `modes`, `exclude`,
 `extra`.  `modes` defaults to `n,x,s,o`; add `i`, `c`, or `t` when the user
 explicitly wants those mappings mirrored.
+
+`which_key`: `enabled`, `display`, `relative_group`, `alongside`, `separator`.
+`display = nil`/`"hide"` hides mirrors; precedence is `alongside` →
+`relative_group` → `hide`.  A translated prefix group replaces the original
+group label; which-key cannot place a translated key inside the original group.
 
 `cmdline`: `enabled`, `aliases`, `extra`.
 

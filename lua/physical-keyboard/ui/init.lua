@@ -795,6 +795,22 @@ activate_setting = function(path)
 		return
 	end
 
+	if spec.kind == "string" then
+		local input = vim.fn.input({
+			prompt = spec.path .. ": ",
+			default = tostring(value or ""),
+		})
+		if input == "" then
+			render()
+			return
+		end
+		local ok, err, persisted = core.set_option(path, input)
+		report_setting(path, input, ok, err, persisted)
+		data.invalidate()
+		render()
+		return
+	end
+
 	local choices = options.choices(spec, core.config)
 	picker.open({
 		title = spec.path,

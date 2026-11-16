@@ -120,6 +120,14 @@ US-позиция `:` — на Shift+;.  US-позиция даёт `Ж`, и 'la
       extra = {},               -- [английский lhs] = национальный lhs
     },
 
+    which_key = {
+      enabled = true,
+      display = nil,            -- nil / "hide": скрыть зеркала, оставить оригиналы
+      relative_group = false,   -- копировать label группы в зеркало
+      alongside = false,        -- добавить зеркальные клавиши к подписи оригинала
+      separator = "\\",
+    },
+
     cmdline = {
       enabled = true,
       aliases = {},             -- дополнительные английские Ex-команды
@@ -264,6 +272,33 @@ runtime-набор, даже если её нет в `active_layouts`.
   mappings = { extra = { ["<Leader>zz"] = "<Leader>ZZ" } },
 <
 `exclude` имеет приоритет над `extra`.
+
+Интеграция с which-key: >lua
+  which_key = {
+    enabled = true,
+    display = nil,            -- nil или "hide"
+    relative_group = false,
+    alongside = false,
+    separator = "\\",
+  },
+<
+`display = nil` и `"hide"` (по умолчанию) скрывают зеркальные маппинги в
+which-key, оставляя только оригинальные английские записи.
+
+`relative_group = true` показывает зеркальный маппинг под переведённым
+префиксом с исходным label и иконкой группы.  Например, `<leader>f` с
+подписью "find" даёт `<leader>а` с подписью "find".  which-key не может
+поместить `<leader>аа` внутрь исходной группы `<leader>f`; зеркальный префикс
+— это физический эквивалент.
+
+`alongside = true` добавляет зеркальные клавиши к подписи оригинала:
+
+  Find files \ ъъаа
+
+`separator` по умолчанию `\`.  Приоритет: `alongside` -> `relative_group` ->
+`hide`.  `which_key.enabled = false` возвращает стандартное отображение
+which-key.  which-key 3.x поддерживается напрямую; 2.x использует legacy
+`register`, а label групп копируется только если его удаётся найти.
 
 ==============================================================================
 10. АЛИАСЫ КОМАНДНОЙ СТРОКИ               *physical-keyboard-ru-cmdline*

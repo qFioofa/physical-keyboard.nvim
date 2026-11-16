@@ -122,6 +122,14 @@ Defaults are shown below.  Only the keys you need have to be set. >lua
       extra = {},               -- [english lhs] = native lhs
     },
 
+    which_key = {
+      enabled = true,
+      display = nil,            -- nil / "hide": hide mirrors, keep originals
+      relative_group = false,   -- copy the original group label to the mirror
+      alongside = false,        -- append mirrored keys to the original label
+      separator = "\\",
+    },
+
     cmdline = {
       enabled = true,
       aliases = {},             -- extra English Ex commands
@@ -267,6 +275,33 @@ Add an explicit variant: >lua
   mappings = { extra = { ["<Leader>zz"] = "<Leader>ZZ" } },
 <
 `exclude` wins over `extra`.
+
+which-key integration: >lua
+  which_key = {
+    enabled = true,
+    display = nil,            -- nil or "hide"
+    relative_group = false,
+    alongside = false,
+    separator = "\\",
+  },
+<
+`display = nil` and `"hide"` (the default) hide mirrored mappings in
+which-key, so only the original English entries remain.
+
+`relative_group = true` shows a mirrored mapping under the translated prefix
+with the original group label and icon.  For example `<leader>f` labelled
+"find" produces `<leader>а` labelled "find".  which-key cannot place
+`<leader>аа` inside the original `<leader>f` group; the mirrored prefix is the
+physical equivalent.
+
+`alongside = true` appends mirrored keys to the original label, for example:
+
+  Find files \ ъъаа
+
+`separator` defaults to `\`.  Precedence is `alongside` -> `relative_group` ->
+`hide`.  Set `which_key.enabled = false` to restore which-key's default
+listing.  which-key 3.x is supported directly; 2.x uses its legacy `register`
+API and copies group labels only when they are discoverable.
 
 ==============================================================================
 10. COMMAND-LINE ALIASES                         *physical-keyboard-cmdline*

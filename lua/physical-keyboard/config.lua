@@ -37,6 +37,13 @@ M.defaults = {
 		exclude = {},
 		extra = {},
 	},
+	which_key = {
+		enabled = true,
+		display = nil,
+		relative_group = false,
+		alongside = false,
+		separator = "\\",
+	},
 	cmdline = {
 		enabled = true,
 		aliases = {},
@@ -63,6 +70,7 @@ local KNOWN = {
 		detect = true,
 		langmap = true,
 		mappings = true,
+		which_key = true,
 		cmdline = true,
 		echo = true,
 		userLayouts = true,
@@ -87,6 +95,13 @@ local KNOWN = {
 		modes = true,
 		exclude = true,
 		extra = true,
+	},
+	which_key = {
+		enabled = true,
+		display = true,
+		relative_group = true,
+		alongside = true,
+		separator = true,
 	},
 	cmdline = { enabled = true, aliases = true, extra = true },
 	echo = { enabled = true, mode = true },
@@ -349,6 +364,55 @@ local function normalize_modes(value, warnings)
 	return valid
 end
 
+local function normalize_which_key(value, warnings)
+	if value == nil then
+		return vim.deepcopy(M.defaults.which_key)
+	end
+	if type(value) == "boolean" then
+		local result = vim.deepcopy(M.defaults.which_key)
+		result.enabled = value
+		return result
+	end
+	if type(value) ~= "table" then
+		warnings[#warnings + 1] = "which_key must be a table or false"
+		return vim.deepcopy(M.defaults.which_key)
+	end
+
+	local result = merge(M.defaults.which_key, value)
+
+	if type(result.enabled) ~= "boolean" then
+		warnings[#warnings + 1] = "which_key.enabled must be true or false"
+		result.enabled = M.defaults.which_key.enabled
+	end
+
+	if result.display ~= nil and result.display ~= false then
+		if type(result.display) == "string" and result.display:lower() == "hide" then
+			result.display = "hide"
+		else
+			warnings[#warnings + 1] = "which_key.display must be 'hide' or nil"
+			result.display = M.defaults.which_key.display
+		end
+	end
+	if result.display == false then
+		result.display = nil
+	end
+
+	if type(result.relative_group) ~= "boolean" then
+		warnings[#warnings + 1] = "which_key.relative_group must be true or false"
+		result.relative_group = M.defaults.which_key.relative_group
+	end
+	if type(result.alongside) ~= "boolean" then
+		warnings[#warnings + 1] = "which_key.alongside must be true or false"
+		result.alongside = M.defaults.which_key.alongside
+	end
+	if type(result.separator) ~= "string" or result.separator == "" then
+		warnings[#warnings + 1] = "which_key.separator must be a non-empty string"
+		result.separator = M.defaults.which_key.separator
+	end
+
+	return result
+end
+
 local function normalize_strings(value, name, warnings)
 	local list = normalize_list(value) or {}
 	local valid = {}
@@ -564,12 +628,14 @@ function M.resolve(opts, extra)
 			result[section] = vim.deepcopy(M.defaults[section])
 		end
 	end
+	result.which_key = normalize_which_key(result.which_key, warnings)
 
 	check_unknown(opts, KNOWN.top, "", warnings)
 	check_unknown(file_opts or {}, KNOWN.top, "", warnings)
 	check_unknown(result.detect, KNOWN.detect, "detect.", warnings)
 	check_unknown(result.langmap, KNOWN.langmap, "langmap.", warnings)
 	check_unknown(result.mappings, KNOWN.mappings, "mappings.", warnings)
+	check_unknown(result.which_key, KNOWN.which_key, "which_key.", warnings)
 	check_unknown(result.cmdline, KNOWN.cmdline, "cmdline.", warnings)
 	check_unknown(result.echo, KNOWN.echo, "echo.", warnings)
 

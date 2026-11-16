@@ -24,6 +24,8 @@ external binary is downloaded and no GPL code is bundled.
 - **18 bundled layouts** — Russian, German, French, Spanish, Italian,
   Ukrainian, Belarusian, Czech, Swedish, Turkish, Greek, Hebrew, Arabic,
   Persian, Kazakh, Korean, Dvorak, Colemak. Custom layouts are supported.
+- **which-key aware** — mirrored mappings can be hidden, grouped with the
+  original label, or appended to the original shortcut label.
 - **Command-line aliases** — `:ц` → `:w`, `:цй` → `:wq`, and more via
   `cnoreabbrev`.
 - **Configuration** — plugin `opts`, an external Lua file, UI overrides and
@@ -135,6 +137,14 @@ require("physical-keyboard").setup({
     extra = {},                  -- [english lhs] = native lhs
   },
 
+  which_key = {
+    enabled = true,
+    display = nil,               -- nil / "hide": hide mirrors, keep originals
+    relative_group = false,      -- copy the original group label to the mirror
+    alongside = false,           -- append mirrored keys to the original label
+    separator = "\\",
+  },
+
   cmdline = {
     enabled = true,
     aliases = {},                -- extra English Ex commands
@@ -146,6 +156,25 @@ require("physical-keyboard").setup({
 Precedence: defaults → config file → `setup()` opts → UI overrides →
 `PKB_*` variables. The override file is written by the UI, never by editing
 your Lua config.
+
+### which-key integration
+
+which-key otherwise lists every mirrored shortcut as a separate category. The
+`which_key` section controls that presentation:
+
+- `display = nil` or `"hide"` (default) hides mirrored entries; only the
+  original English shortcuts remain.
+- `relative_group = true` shows mirrored shortcuts under the translated prefix
+  with the original group label (`<leader>а` labelled `find`). which-key cannot
+  place a translated key inside the original `<leader>f` group; the mirrored
+  prefix is the physical equivalent.
+- `alongside = true` appends mirrored keys to the original label, for example
+  `Find files \ ъъаа`, using `separator`.
+
+Precedence is `alongside` → `relative_group` → `hide`. Set
+`which_key.enabled = false` to restore which-key's default listing. Both
+which-key 3.x and 2.x are supported; group labels are copied when which-key
+exposes them.
 
 ## Commands
 
@@ -188,7 +217,7 @@ Start from the smallest matching file:
 | [`examples/remote.lua`](examples/remote.lua)               | SSH / remote Neovim         |
 | [`examples/config-file.lua`](examples/config-file.lua)     | external config file        |
 | [`examples/custom-layout.lua`](examples/custom-layout.lua) | custom layout map           |
-| [`examples/mappings.lua`](examples/mappings.lua)           | exclusions, extras, aliases |
+| [`examples/mappings.lua`](examples/mappings.lua)           | exclusions, extras, which-key, aliases |
 | [`examples/lualine.lua`](examples/lualine.lua)             | lualine component           |
 
 Reference documentation:

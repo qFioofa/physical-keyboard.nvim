@@ -3,6 +3,7 @@ local layouts = require("physical-keyboard.layouts")
 local langmap = require("physical-keyboard.langmap")
 local detect = require("physical-keyboard.detect")
 local mappings = require("physical-keyboard.mappings")
+local which_key = require("physical-keyboard.which_key")
 local cmdline = require("physical-keyboard.cmdline")
 local echo = require("physical-keyboard.echo")
 local commands = require("physical-keyboard.commands")
@@ -414,6 +415,10 @@ local function wire(cfg)
 	else
 		mappings.unhack()
 	end
+	which_key.setup(cfg.which_key)
+	if cfg.enable and cfg.mappings.enabled then
+		which_key.refresh()
+	end
 
 	cmdline.set_active_ids(M.effective_layouts())
 	cmdline.disable()
@@ -479,6 +484,7 @@ function M.status()
 			created = mappings.count_created(),
 			excluded = #cfg.mappings.exclude,
 		},
+		which_key = which_key.status(),
 		cmdline = {
 			enabled = cfg.cmdline.enabled,
 			count = cmdline.count(),
@@ -573,6 +579,7 @@ function M.refresh_mappings()
 			created = created + automap_buffer(bufnr, true)
 		end
 	end
+	which_key.refresh()
 	return created
 end
 
@@ -591,6 +598,9 @@ function M.enable()
 	mappings.rebuild(M.effective_layouts())
 	if cfg.mappings.enabled and cfg.mappings.hack_keymap then
 		mappings.hack()
+	end
+	if cfg.mappings.enabled then
+		which_key.enable()
 	end
 
 	apply_langmap(true)
@@ -618,6 +628,7 @@ function M.disable()
 
 	mappings.unhack()
 	mappings.cleanup()
+	which_key.disable()
 	cmdline.disable()
 	langmap.restore()
 	M._current_layout = nil
@@ -824,6 +835,7 @@ return {
   },
 
   -- mappings = { exclude = { "<leader>f" } },
+  -- which_key = { relative_group = true },
   -- cmdline = { aliases = { "tabnew" } },
 }
 ]]

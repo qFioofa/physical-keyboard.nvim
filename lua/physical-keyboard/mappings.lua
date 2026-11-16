@@ -22,6 +22,7 @@ local state = {
 	created_set = {},
 	exclude = {},
 	extra = {},
+	on_change = nil,
 }
 
 local function is_special_sequence(lhs)
@@ -227,7 +228,7 @@ local function capture_originals()
 	state.orig.buf_del = vim.api.nvim_buf_del_keymap
 end
 
-local function record(global, bufnr, mode, lhs, source_lhs)
+local function record(global, bufnr, mode, lhs, source_lhs, source_desc, layout)
 	local key
 	if global then
 		key = "g|" .. mode .. "|" .. lhs
@@ -244,7 +245,15 @@ local function record(global, bufnr, mode, lhs, source_lhs)
 		mode = mode,
 		lhs = lhs,
 		source_lhs = source_lhs or lhs,
+		source_desc = source_desc or source_lhs or lhs,
+		layout = layout,
 	}
+end
+
+local function changed()
+	if state.on_change then
+		state.on_change()
+	end
 end
 
 local function duplicate_global(mode, lhs, rhs, opts)
@@ -253,13 +262,19 @@ local function duplicate_global(mode, lhs, rhs, opts)
 	end
 
 	local setter = state.orig.set or vim.api.nvim_set_keymap
+	local source_desc = opts and opts.desc or lhs
+	local created = false
 	for _, variant in ipairs(M.variants(lhs)) do
 		if variant.lhs ~= lhs then
 			local merged = vim.deepcopy(opts or {})
 			merged.desc = MARK .. (merged.desc or lhs)
 			pcall(setter, mode, variant.lhs, rhs, merged)
-			record(true, nil, mode, variant.lhs, lhs)
+			record(true, nil, mode, variant.lhs, lhs, source_desc, variant.layout)
+			created = true
 		end
+	end
+	if created then
+		changed()
 	end
 end
 
@@ -270,13 +285,19 @@ local function duplicate_buffer(buffer, mode, lhs, rhs, opts)
 
 	local bufnr = (buffer == 0 or buffer == nil) and vim.api.nvim_get_current_buf() or buffer
 	local setter = state.orig.buf_set or vim.api.nvim_buf_set_keymap
+	local source_desc = opts and opts.desc or lhs
+	local created = false
 	for _, variant in ipairs(M.variants(lhs)) do
 		if variant.lhs ~= lhs then
 			local merged = vim.deepcopy(opts or {})
 			merged.desc = MARK .. (merged.desc or lhs)
 			pcall(setter, buffer, mode, variant.lhs, rhs, merged)
-			record(false, bufnr, mode, variant.lhs, lhs)
+			record(false, bufnr, mode, variant.lhs, lhs, source_desc, variant.layout)
+			created = true
 		end
+	end
+	if created then
+		changed()
 	end
 end
 
@@ -325,6 +346,7 @@ end
 
 --- Removes every mapping mirrored by this module.
 function M.cleanup()
+	local had = #state.created > 0
 	for _, item in ipairs(state.created) do
 		if item.global then
 			pcall(vim.api.nvim_del_keymap, item.mode, item.lhs)
@@ -334,6 +356,9 @@ function M.cleanup()
 	end
 	state.created = {}
 	state.created_set = {}
+	if had then
+		changed()
+	end
 end
 
 local function mapping_opts(mapping)
@@ -382,7 +407,7 @@ local function scan_global(modes)
 						)
 						if ok then
 							existing[variant.lhs] = true
-							record(true, nil, mode, variant.lhs, mapping.lhs)
+							record(true, nil, mode, variant.lhs, mapping.lhs, mapping.desc, variant.layout)
 							created = created + 1
 						end
 					end
@@ -421,7 +446,7 @@ local function scan_buffer(bufnr, modes)
 						)
 						if ok then
 							existing[variant.lhs] = true
-							record(false, bufnr, mode, variant.lhs, mapping.lhs)
+							record(false, bufnr, mode, variant.lhs, mapping.lhs, mapping.desc, variant.layout)
 							created = created + 1
 						end
 					end
@@ -453,6 +478,9 @@ function M.automapping(opts)
 		created = created + scan_buffer(bufnr, modes)
 	end
 
+	if created > 0 then
+		changed()
+	end
 	return created
 end
 
@@ -469,6 +497,12 @@ function M.list()
 		result[#result + 1] = vim.deepcopy(item)
 	end
 	return result
+end
+
+--- Registers a callback invoked after mirrored mappings change.
+---@param fn function|nil
+function M.on_change(fn)
+	state.on_change = fn
 end
 
 ---@return boolean
