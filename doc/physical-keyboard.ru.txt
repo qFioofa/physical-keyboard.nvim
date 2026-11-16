@@ -1,0 +1,423 @@
+*physical-keyboard.ru.txt*  Физическая раскладка в Normal mode (RU)
+*physical-keyboard-ru*
+
+physical-keyboard.nvim позволяет работать в национальной раскладке в Normal,
+Visual и Operator-pending режимах.  Наберите `сшц` — Neovim выполнит `ciw`;
+маппинги плагинов продолжают работать; текст в Insert mode не переводится.
+
+==============================================================================
+СОДЕРЖАНИЕ                                  *physical-keyboard-ru-contents*
+
+  1. Введение ........................... |physical-keyboard-ru-intro|
+  2. Установка .......................... |physical-keyboard-ru-install|
+  3. Как это работает ................... |physical-keyboard-ru-how|
+  4. Настройка .......................... |physical-keyboard-ru-config|
+  5. Внешний файл конфигурации .......... |physical-keyboard-ru-config-file|
+  6. Переменные окружения ............... |physical-keyboard-ru-env|
+  7. Раскладки .......................... |physical-keyboard-ru-layouts|
+  8. Определение раскладки .............. |physical-keyboard-ru-detection|
+  9. Зеркалирование маппингов ........... |physical-keyboard-ru-mappings|
+ 10. Алиасы командной строки ............ |physical-keyboard-ru-cmdline|
+ 11. Команды ............................ |physical-keyboard-ru-commands|
+ 12. Статуслайн ......................... |physical-keyboard-ru-statusline|
+ 13. События и колбэки .................. |physical-keyboard-ru-events|
+ 14. Настройка через ИИ ................. |physical-keyboard-ru-ai|
+ 15. Решение проблем .................... |physical-keyboard-ru-troubleshooting|
+ 16. Лицензия ........................... |physical-keyboard-ru-license|
+
+==============================================================================
+1. ВВЕДЕНИЕ                                     *physical-keyboard-ru-intro*
+
+Плагин состоит из четырёх слоёв:
+
+  - 'langmap' — встроенный перевод клавиш Normal/Visual/Operator-pending;
+  - зеркалирование маппингов плагинов;
+  - определение активной раскладки ОС;
+  - алиасы Ex-команд через `:cnoreabbrev`.
+
+Плагин не скачивает сторонние бинарники.  Необязательные утилиты для
+определения раскладки перечислены в |physical-keyboard-ru-detection|.
+
+Требования:
+  - Neovim 0.10 или новее;
+  - раскладка из списка |physical-keyboard-ru-layouts|.
+
+==============================================================================
+2. УСТАНОВКА                                   *physical-keyboard-ru-install*
+
+lazy.nvim: >lua
+  {
+    "qFioofa/physical-keyboard.nvim",
+    event = { "VeryLazy" },
+    opts = {
+      active_layouts = { "ru" },
+    },
+  }
+<
+`opts` автоматически вызывает `require("physical-keyboard").setup(opts)`.
+`VeryLazy` рекомендуется, чтобы маппинги других плагинов уже существовали.
+Маппинги, созданные позже, перехватываются через hook API.
+
+Ручная установка: >lua
+  require("physical-keyboard").setup({
+    active_layouts = { "ru" },
+  })
+<
+
+==============================================================================
+3. КАК ЭТО РАБОТАЕТ                              *physical-keyboard-ru-how*
+
+  - 'langmap' переводит символы в Normal/Visual/Select/Operator-pending.
+    Это делает C-код Neovim, поэтому покрыты все встроенные команды.
+  - Маппинги сравниваются по «сырому» левому операнду, поэтому плагин
+    дублирует всё, что зарегистрировано через `vim.keymap.set()`,
+    `nvim_set_keymap()` и `nvim_buf_set_keymap()`.
+  - На командную строку 'langmap' не действует.  Общие Ex-команды получают
+    алиасы `:cnoreabbrev`.
+  - Адаптер ОС определяет активную раскладку и выбирает нужный 'langmap'.
+
+Открытие командной строки: >vim
+  Ж ц й Enter
+<
+'langmap' физический.  На ЙЦУКЕН напечатанный `:` находится на Shift+6, а
+US-позиция `:` — на Shift+;.  US-позиция даёт `Ж`, и 'langmap' превращает её
+в `:`.  Затем `цй` становится `wq`.
+
+==============================================================================
+4. НАСТРОЙКА                                   *physical-keyboard-ru-config*
+
+Значения по умолчанию.  Указывайте только нужные ключи. >lua
+  require("physical-keyboard").setup({
+    enable = true,
+    notify = "errors",          -- "all" | "errors" | "off"
+    active_layouts = { "ru" },  -- {} включает все встроенные раскладки
+    fallback = "unique",        -- "unique" | "<id>" | false
+    toggle_key = false,         -- например, "<leader>tk"
+
+    detect = {
+      enabled = true,
+      provider = nil,           -- принудительный адаптер, например "niri"
+      providers = nil,          -- allowlist, например { "niri", "sway" }
+      remote = "auto",          -- "auto" | true | false
+      min_interval = 300,       -- миллисекунды
+      timeout = 500,            -- таймаут команды, миллисекунды
+      events = { "FocusGained", "VimResume", "InsertLeave" },
+      async = true,
+      on_change = nil,          -- function(info) ... end
+    },
+
+    langmap = {
+      enabled = true,
+    },
+
+    mappings = {
+      enabled = true,
+      hack_keymap = true,
+      automapping = true,
+      modes = { "n", "x", "s", "o" }, -- "i" включает Insert-маппинги
+      exclude = {},             -- LHS-строки / Lua-паттерны
+      extra = {},               -- [английский lhs] = национальный lhs
+    },
+
+    cmdline = {
+      enabled = true,
+      aliases = {},             -- дополнительные английские Ex-команды
+      extra = {},               -- [национальный] = английский
+    },
+
+    echo = {
+      enabled = false,
+      mode = "all",
+    },
+  })
+<
+`notify = false` означает `"errors"`.  Чтобы полностью отключить уведомления,
+используйте `"off"`.  `fallback = "unique"` оставляет только неконфликтующие
+пары; если раскладка одна, надёжнее `fallback = "ru"`.
+
+==============================================================================
+5. ВНЕШНИЙ ФАЙЛ КОНФИГУРАЦИИ             *physical-keyboard-ru-config-file*
+
+Настройки вне `init.lua`: >lua
+  require("physical-keyboard").setup({
+    config_file = true, -- ~/.config/nvim/physical-keyboard.lua
+  })
+<
+Можно указать путь: >lua
+  require("physical-keyboard").setup({
+    config_file = "~/.config/nvim/pkb.lua",
+  })
+<
+Файл возвращает таблицу с теми же ключами, что и `setup()`: >lua
+  return {
+    active_layouts = { "ru" },
+    detect = { enabled = true },
+  }
+<
+Команды:
+  `:PhyKeyboardEditConfig`     открыть или создать файл
+  `:PhyKeyboardReload`         перечитать файл и выполнить setup()
+  `:PhyKeyboardConfig`         показать действующую конфигурацию
+  `:PhyKeyboardConfig --json`  конфигурация в JSON
+
+Приоритет: значения по умолчанию, затем файл, затем `setup()`, затем
+переменные окружения.
+
+==============================================================================
+6. ПЕРЕМЕННЫЕ ОКРУЖЕНИЯ                         *physical-keyboard-ru-env*
+
+`PKB_CONFIG`    загрузить файл конфигурации без `config_file`
+`PKB_LAYOUT`    принудительная раскладка (можно список через запятую)
+`PKB_DISABLE=1` отключить плагин на этот запуск
+`PKB_DEBUG=1`   включить echo, debug и все уведомления
+`PKB_NOTIFY`    `all`, `errors` или `off`
+
+Примеры: >sh
+  PKB_LAYOUT=ru nvim
+  PKB_DISABLE=1 nvim
+  PKB_DEBUG=1 nvim
+<
+`env = false` в `setup()` игнорирует все переменные `PKB_*`.
+
+==============================================================================
+7. РАСКЛАДКИ                                   *physical-keyboard-ru-layouts*
+
+ id         Раскладка           id         Раскладка
+---------------------------------------------------------------
+ `ru`       Русская             `uk`       Украинская
+ `de`       Немецкая (QWERTZ)   `by`       Белорусская
+ `fr`       Французская (AZERTY) `cs`      Чешская
+ `es`       Испанская           `sv`       Шведская
+ `it`       Итальянская         `tr`       Турецкая
+ `gr`       Греческая           `he`       Иврит
+ `ar`       Арабская            `fa`       Персидская
+ `kk`       Казахская           `kr`       Корейская
+ `dvorak`   Dvorak              `colemak`  Colemak
+
+Список: `:PhyKeyboardList`.
+
+Своя раскладка: >lua
+  userLayouts = {
+    my = {
+      title = "Моя раскладка",
+      names = { "my", "My Layout" }, -- имена для определения
+      map = {
+        ["q"] = "й", -- английский символ -> национальный
+        ["w"] = "ц",
+      },
+    },
+  },
+<
+Поддерживаются только пары 1:1.  Верхний регистр генерируется автоматически.
+
+==============================================================================
+8. ОПРЕДЕЛЕНИЕ РАСКЛАДКИ                   *physical-keyboard-ru-detection*
+
+ Окружение                 Адаптер
+--------------------------------------------------------------------
+ niri                      `niri msg -j keyboard-layouts`
+ Sway / wlroots            `swaymsg -t get_inputs -r`
+ Hyprland                  `hyprctl devices -j`
+ GNOME                     `gsettings ... mru-sources`
+ KDE / Plasma              `qdbus ... KeyboardLayouts.getLayout`
+ X11                       `xkb-switch -p`, затем `setxkbmap`
+ IBus / Fcitx              `ibus engine`, `fcitx5-remote -n`
+ macOS                     `im-select`, затем `defaults`
+ Windows                   `im-select.exe`, затем PowerShell
+
+Определение запускается по настроенным событиям, ограничено `min_interval` и
+по умолчанию асинхронное.  Английская раскладка очищает 'langmap'.
+Национальная раскладка сопоставляется со всеми встроенными и добавляется в
+runtime-набор, даже если её нет в `active_layouts`.
+
+`detect.remote = "auto"` отключает определение по SSH.  На удалённой машине
+используйте `active_layouts`, `fallback` или `:PhyKeyboardUse`.
+
+`detect.provider` включает один адаптер, `detect.providers` — allowlist.
+`:PhyKeyboardDetect` показывает сырой ответ, `:PhyKeyboardDoctor` — все
+адаптеры.
+
+==============================================================================
+9. ЗЕРКАЛИРОВАНИЕ МАППИНГОВ               *physical-keyboard-ru-mappings*
+
+Маппинги дублируются для каждой активной раскладки.  `<Plug>`, `<Sid>` и
+`<Snr>` не зеркалируются.
+
+Отключить зеркалирование: >lua
+  mappings = { enabled = false },
+<
+Исключить маппинги: >lua
+  mappings = { exclude = { "<Leader>f", "<C%-" } },
+<
+Строки сравниваются с LHS и используются как Lua-паттерны.
+
+Добавить вариант вручную: >lua
+  mappings = { extra = { ["<Leader>zz"] = "<Leader>ZZ" } },
+<
+`exclude` имеет приоритет над `extra`.
+
+==============================================================================
+10. АЛИАСЫ КОМАНДНОЙ СТРОКИ               *physical-keyboard-ru-cmdline*
+
+Общие Ex-команды регистрируются через `:cnoreabbrev`: `:ц` -> `:w`,
+`:цй` -> `:wq`.
+
+Дополнительные английские команды: >lua
+  cmdline = { aliases = { "tabnew", "resize" } },
+<
+Явные алиасы: >lua
+  cmdline = { extra = { ["цц"] = "w" } },
+<
+Во время работы: >vim
+  :PhyKeyboardAliases
+  :PhyKeyboardAliases add цц w
+  :PhyKeyboardAliases remove цц
+<
+==============================================================================
+11. КОМАНДЫ                                     *physical-keyboard-ru-commands*
+
+`:PhyKeyboard`                  общая информация
+`:PhyKeyboardStatus`            состояние определения, langmap и маппингов
+`:PhyKeyboardConfig [--json]`   действующая конфигурация
+`:PhyKeyboardDoctor [--json]`   полный отчёт об окружении
+`:PhyKeyboardList`              встроенные раскладки
+`:PhyKeyboardDetect`            сырой результат определения
+`:PhyKeyboardEnable`            включить плагин
+`:PhyKeyboardDisable`           выключить плагин
+`:PhyKeyboardToggle`            переключить
+`:PhyKeyboardUse {layout}`      принудительная раскладка (`en` отключает перевод)
+`:PhyKeyboardAuto`              вернуть автоматическое определение
+`:PhyKeyboardRefresh`           определить раскладку сейчас
+`:PhyKeyboardMappings`          заново зеркалировать маппинги
+`:PhyKeyboardAliases`           список и правка алиасов
+`:PhyKeyboardEcho [on|off]`     показ сырых клавиш
+`:PhyKeyboardEchoMode [mode]`   режим показа
+`:PhyKeyboardNotify [mode]`     `all`, `errors`, `off`
+`:PhyKeyboardCmdline [on|off]`  включить/выключить алиасы
+`:PhyKeyboardEditConfig`        открыть или создать файл конфигурации
+`:PhyKeyboardReload`            перечитать конфигурацию
+
+Совместимость: `:PhyKeyboardEnableLayout`,
+`:PhyKeyboardDisableLayout`, `:PhyKeyboardSet`.
+
+==============================================================================
+12. СТАТУСЛАЙН                                *physical-keyboard-ru-statusline*
+
+Компонент статуслайна: >lua
+  vim.o.statusline = "%{v:lua.require'physical-keyboard'.statusline()} %f"
+<
+lualine: >lua
+  {
+    function()
+      return require("physical-keyboard").statusline()
+    end,
+  }
+<
+Возвращает `RU`, `EN`, `--` или заданные метки.  Параметры: >lua
+  require("physical-keyboard").statusline({
+    uppercase = false,
+    english = "ENG",
+    unknown = "--",
+    prefix = "",
+    suffix = "",
+  })
+<
+`require("physical-keyboard").layout_info()` возвращает id раскладки, сырое
+значение ОС, провайдер и признак английской раскладки.
+`vim.g.physical_keyboard_layout` содержит `ru`, `de`, `en` или пустую строку.
+
+==============================================================================
+13. СОБЫТИЯ И КОЛБЭКИ                        *physical-keyboard-ru-events*
+
+События `User`:
+  `PhysicalKeyboardEnabled`
+  `PhysicalKeyboardDisabled`
+  `PhysicalKeyboardLayoutChanged`
+  `PhysicalKeyboardConfigReloaded`
+
+`PhysicalKeyboardLayoutChanged` получает `data`: >lua
+  {
+    id = "ru",
+    layout = "ru",
+    english = false,
+    raw = "Russian",
+    provider = "niri",
+    forced = nil,
+  }
+<
+Пример: >lua
+  vim.api.nvim_create_autocmd("User", {
+    pattern = "PhysicalKeyboardLayoutChanged",
+    callback = function(args)
+      vim.g.my_layout = args.data.id or "en"
+    end,
+  })
+<
+Те же данные передаются в `detect.on_change`.
+
+==============================================================================
+14. НАСТРОЙКА ЧЕРЕЗ ИИ                          *physical-keyboard-ru-ai*
+
+ИИ-ассистент может настроить плагин по запросу пользователя:
+
+  1. Уточнить ОС, рабочий стол/композитор, раскладки, SSH, менеджер плагинов
+     и маппинги, которые нельзя зеркалировать.
+  2. Выполнить `:PhyKeyboardDoctor --json` (или headless-команду ниже) и
+     прочитать `session`, `detection.probes`,
+     `detection.environment.executables`, `layouts`, `recommendations`.
+  3. Выбрать стратегию определения и минимальный `opts`.
+  4. Проверить `:PhyKeyboardStatus`, `:PhyKeyboardDetect`,
+     `:PhyKeyboardConfig --json`, `:checkhealth physical-keyboard`.
+
+Headless-отчёт: >sh
+  nvim --headless \
+    -c 'lua print(vim.json.encode(require("physical-keyboard").doctor({ probe = true })))' \
+    -c qa 2>&1
+<
+В репозитории есть `AGENTS.md` с полным playbook, таблицей решений и
+рецептами.  Не устанавливайте сторонние утилиты без разрешения пользователя.
+
+==============================================================================
+15. РЕШЕНИЕ ПРОБЛЕМ                 *physical-keyboard-ru-troubleshooting*
+
+`E357: 'langmap': Matching character missing`
+  Специальный символ не экранирован.  Это ошибка плагина — сообщите о ней.
+
+Шорткаты не работают в Normal mode
+  Проверьте `:PhyKeyboardStatus` и `:PhyKeyboardMappings`.  Hook маппингов
+  должен быть включён (`mappings.hack_keymap = true`).  После загрузки
+  lazy-плагинов выполните `:PhyKeyboardMappings`.
+
+`:wq` не работает в русской раскладке
+  Используйте физическую US-позицию `:`.  На ЙЦУКЕН это `Ж`:
+  `Ж ц й Enter`.
+
+Перевод остаётся включённым в английской раскладке
+  Проверьте `:PhyKeyboardDetect`.  Если адаптер не работает, действует
+  `fallback = "unique"`.  Установите утилиту определения или задайте
+  раскладку через `:PhyKeyboardUse`.
+
+Определение отключено по SSH
+  Это сделано намеренно.  Укажите `detect.remote = false`, чтобы отключить
+  его явно, или используйте `active_layouts` / `:PhyKeyboardUse`.
+
+Insert mode переводит текст
+  Этого быть не должно.  Отключите лишние режимы в `mappings.modes` и
+  проверьте сырые клавиши через `:PhyKeyboardEcho`.  Приложите вывод
+  `:PhyKeyboardDoctor --json` к отчёту об ошибке.
+
+Слишком много уведомлений
+  Установите `notify = "off"` или `notify = "errors"`.
+
+Плагин ничего не делает
+  Не вызван `setup()`.  В lazy.nvim используйте `opts` или `config`.
+  Проверьте `:PhyKeyboardStatus`.
+
+==============================================================================
+16. ЛИЦЕНЗИЯ                                     *physical-keyboard-ru-license*
+
+MIT.  Данные раскладок — ai/convert-layout (MIT).  Зеркалирование маппингов
+вдохновлено Wansmer/langmapper.nvim (MIT).  Идея unique-submap —
+mrsobakin/multilayout.nvim (GPL-3.0); код GPL не копируется.
+
+vim:tw=78:ts=8:noet:ft=help:norl:
