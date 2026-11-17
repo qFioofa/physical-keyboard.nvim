@@ -132,6 +132,21 @@ function M.check()
 		end
 	end
 
+	local native = status.native or {}
+	if native.enabled then
+		ok(
+			("native listings: commandline=%s api=%s"):format(
+				tostring(native.commandline),
+				tostring(native.api_patched)
+			)
+		)
+		if native.suspended then
+			warn(("mirrors temporarily suspended: %d"):format(native.suspended_count or 0))
+		end
+	else
+		info("native listing filter is disabled; :nmap and keymap pickers may show duplicates")
+	end
+
 	if status.cmdline.enabled then
 		ok(("command-line aliases: %d"):format(status.cmdline.count))
 	else

@@ -44,6 +44,11 @@ M.defaults = {
 		alongside = false,
 		separator = "\\",
 	},
+	native = {
+		enabled = true,
+		commandline = true,
+		api = true,
+	},
 	cmdline = {
 		enabled = true,
 		aliases = {},
@@ -71,6 +76,7 @@ local KNOWN = {
 		langmap = true,
 		mappings = true,
 		which_key = true,
+		native = true,
 		cmdline = true,
 		echo = true,
 		userLayouts = true,
@@ -102,6 +108,11 @@ local KNOWN = {
 		relative_group = true,
 		alongside = true,
 		separator = true,
+	},
+	native = {
+		enabled = true,
+		commandline = true,
+		api = true,
 	},
 	cmdline = { enabled = true, aliases = true, extra = true },
 	echo = { enabled = true, mode = true },
@@ -413,6 +424,34 @@ local function normalize_which_key(value, warnings)
 	return result
 end
 
+local function normalize_native(value, warnings)
+	if value == nil then
+		return vim.deepcopy(M.defaults.native)
+	end
+	if type(value) == "boolean" then
+		local result = vim.deepcopy(M.defaults.native)
+		result.enabled = value
+		return result
+	end
+	if type(value) ~= "table" then
+		warnings[#warnings + 1] = "native must be a table or false"
+		return vim.deepcopy(M.defaults.native)
+	end
+
+	local result = merge(M.defaults.native, value)
+	if type(result.enabled) ~= "boolean" then
+		warnings[#warnings + 1] = "native.enabled must be true or false"
+		result.enabled = M.defaults.native.enabled
+	end
+	for _, key in ipairs({ "commandline", "api" }) do
+		if type(result[key]) ~= "boolean" then
+			warnings[#warnings + 1] = ("native.%s must be true or false"):format(key)
+			result[key] = M.defaults.native[key]
+		end
+	end
+	return result
+end
+
 local function normalize_strings(value, name, warnings)
 	local list = normalize_list(value) or {}
 	local valid = {}
@@ -629,6 +668,7 @@ function M.resolve(opts, extra)
 		end
 	end
 	result.which_key = normalize_which_key(result.which_key, warnings)
+	result.native = normalize_native(result.native, warnings)
 
 	check_unknown(opts, KNOWN.top, "", warnings)
 	check_unknown(file_opts or {}, KNOWN.top, "", warnings)
@@ -636,6 +676,7 @@ function M.resolve(opts, extra)
 	check_unknown(result.langmap, KNOWN.langmap, "langmap.", warnings)
 	check_unknown(result.mappings, KNOWN.mappings, "mappings.", warnings)
 	check_unknown(result.which_key, KNOWN.which_key, "which_key.", warnings)
+	check_unknown(result.native, KNOWN.native, "native.", warnings)
 	check_unknown(result.cmdline, KNOWN.cmdline, "cmdline.", warnings)
 	check_unknown(result.echo, KNOWN.echo, "echo.", warnings)
 

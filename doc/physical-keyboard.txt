@@ -130,6 +130,12 @@ Defaults are shown below.  Only the keys you need have to be set. >lua
       separator = "\\",
     },
 
+    native = {
+      enabled = true,
+      commandline = true,       -- :map/:nmap output
+      api = true,               -- nvim_get_keymap/nvim_buf_get_keymap
+    },
+
     cmdline = {
       enabled = true,
       aliases = {},             -- extra English Ex commands
@@ -299,9 +305,40 @@ physical equivalent.
   Find files \ ъъаа
 
 `separator` defaults to `\`.  Precedence is `alongside` -> `relative_group` ->
-`hide`.  Set `which_key.enabled = false` to restore which-key's default
-listing.  which-key 3.x is supported directly; 2.x uses its legacy `register`
+`hide`.  which-key 3.x is supported directly; 2.x uses its legacy `register`
 API and copies group labels only when they are discoverable.
+
+With the default `native.api = true`, setting `which_key.enabled = false` does
+not expose mirrored entries to which-key; use `native.api = false` for that.
+
+9.1 NATIVE MAPPING LISTINGS                          *physical-keyboard-native*
+
+Mirrored mappings are real keymaps, so native listings show both the original
+and the national variant.  The `native` section keeps them out of those lists:
+>lua
+  native = {
+    enabled = true,
+    commandline = true,     -- :map/:nmap/:verbose map output
+    api = true,             -- nvim_get_keymap/nvim_buf_get_keymap
+  },
+<
+`commandline = true` temporarily removes mirrors only while a native listing
+executes, then restores them.  Map definitions such as `:nmap lhs rhs` are
+executed with mirrors intact.  The `<Tab>` completion for `:map`/`:nmap` is not
+filtered.
+
+`api = true` wraps `vim.api.nvim_get_keymap()` and
+`vim.api.nvim_buf_get_keymap()` and filters entries marked `pkb:mirror:`.
+This covers Snacks, Telescope, which-key and other Lua consumers.  The filter
+is read-only: real mirror bindings stay active in every window and buffer.
+
+Limitations:
+- `vim.fn.maparg()` and `getcompletion(..., "mapping")` are not filtered;
+  which-key triggers and other plugins rely on them for actual key handling.
+- Programmatic `<Cmd>nmap<CR>`, `:execute "nmap"`, `:redir` captures and
+  multi-command `|` lines are not filtered.
+- If a Lua plugin must see mirrors, set `native = { api = false }`.
+- Set `native = false` to disable the whole layer.
 
 ==============================================================================
 10. COMMAND-LINE ALIASES                         *physical-keyboard-cmdline*

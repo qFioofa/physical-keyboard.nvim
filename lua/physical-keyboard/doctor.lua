@@ -140,6 +140,7 @@ function M.collect(core, opts)
 			environment = env,
 		},
 		which_key = config.sanitize(status.which_key or {}),
+		native = config.sanitize(status.native or {}),
 		status = config.sanitize(status),
 	}
 
@@ -173,6 +174,12 @@ function M.format(info)
 			tostring(info.which_key.hidden),
 			tostring(info.which_key.groups),
 			tostring(info.which_key.alongside)
+		),
+		("native listings: enabled=%s commandline=%s api=%s suspended=%s"):format(
+			tostring(info.native.enabled),
+			tostring(info.native.commandline),
+			tostring(info.native.api_patched),
+			tostring(info.native.suspended)
 		),
 		("detected: provider=%s raw=%s layout=%s"):format(
 			tostring(info.detection.last.provider),

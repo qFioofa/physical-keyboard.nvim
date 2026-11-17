@@ -17,6 +17,11 @@ require("physical-keyboard").setup({
 		alongside = false, -- or append mirrors to the original label
 		separator = "\\",
 	},
+	native = {
+		enabled = true,
+		commandline = true, -- clean :map/:nmap output
+		api = true, -- clean Snacks/Telescope/which-key lists
+	},
 	cmdline = {
 		aliases = { "tabnew", "resize" },
 		extra = { ["цц"] = "w" },

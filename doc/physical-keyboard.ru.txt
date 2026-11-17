@@ -128,6 +128,12 @@ US-позиция `:` — на Shift+;.  US-позиция даёт `Ж`, и 'la
       separator = "\\",
     },
 
+    native = {
+      enabled = true,
+      commandline = true,       -- вывод :map/:nmap
+      api = true,               -- nvim_get_keymap/nvim_buf_get_keymap
+    },
+
     cmdline = {
       enabled = true,
       aliases = {},             -- дополнительные английские Ex-команды
@@ -296,9 +302,40 @@ which-key, оставляя только оригинальные английс
   Find files \ ъъаа
 
 `separator` по умолчанию `\`.  Приоритет: `alongside` -> `relative_group` ->
-`hide`.  `which_key.enabled = false` возвращает стандартное отображение
-which-key.  which-key 3.x поддерживается напрямую; 2.x использует legacy
+`hide`.  which-key 3.x поддерживается напрямую; 2.x использует legacy
 `register`, а label групп копируется только если его удаётся найти.
+
+При `native.api = true` (по умолчанию) `which_key.enabled = false` больше не
+возвращает зеркала в which-key; для этого используйте `native.api = false`.
+
+9.1 СПИСКИ НАТИВНЫХ МАППИНГОВ                   *physical-keyboard-ru-native*
+
+Зеркала — это реальные keymap'ы, поэтому нативные списки показывают и
+оригинал, и национальный вариант.  Секция `native` убирает дубликаты:
+>lua
+  native = {
+    enabled = true,
+    commandline = true,     -- вывод :map/:nmap/:verbose map
+    api = true,             -- nvim_get_keymap/nvim_buf_get_keymap
+  },
+<
+`commandline = true` временно удаляет зеркала только на время выполнения
+нативного листинга и сразу возвращает их.  Определения маппингов
+(`:nmap lhs rhs`) выполняются с целыми зеркалами.  Автодополнение `<Tab>` для
+`:map`/`:nmap` намеренно не фильтруется.
+
+`api = true` оборачивает `vim.api.nvim_get_keymap()` и
+`vim.api.nvim_buf_get_keymap()` и убирает записи с маркером `pkb:mirror:`.
+Это покрывает Snacks, Telescope, which-key и другие Lua-плагины.  Фильтр
+только читает: реальные зеркала остаются активными в любом окне и буфере.
+
+Ограничения:
+- `vim.fn.maparg()` и `getcompletion(..., "mapping")` не фильтруются: на них
+  держатся триггеры which-key и обработка клавиш в других плагинах.
+- Программные `<Cmd>nmap<CR>`, `:execute "nmap"`, захват через `:redir` и
+  цепочки через `|` не фильтруются.
+- Если Lua-плагину нужны зеркала, используйте `native = { api = false }`.
+- `native = false` отключает весь слой.
 
 ==============================================================================
 10. АЛИАСЫ КОМАНДНОЙ СТРОКИ               *physical-keyboard-ru-cmdline*

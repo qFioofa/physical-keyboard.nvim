@@ -26,6 +26,8 @@ external binary is downloaded and no GPL code is bundled.
   Persian, Kazakh, Korean, Dvorak, Colemak. Custom layouts are supported.
 - **which-key aware** — mirrored mappings can be hidden, grouped with the
   original label, or appended to the original shortcut label.
+- **Native listing aware** — `:map`, `:nmap`, Telescope, Snacks and other
+  keymap pickers show originals only; mirrored bindings stay active.
 - **Command-line aliases** — `:ц` → `:w`, `:цй` → `:wq`, and more via
   `cnoreabbrev`.
 - **Configuration** — plugin `opts`, an external Lua file, UI overrides and
@@ -145,6 +147,12 @@ require("physical-keyboard").setup({
     separator = "\\",
   },
 
+  native = {
+    enabled = true,
+    commandline = true,          -- :map/:nmap output
+    api = true,                  -- nvim_get_keymap/nvim_buf_get_keymap
+  },
+
   cmdline = {
     enabled = true,
     aliases = {},                -- extra English Ex commands
@@ -171,10 +179,36 @@ which-key otherwise lists every mirrored shortcut as a separate category. The
 - `alongside = true` appends mirrored keys to the original label, for example
   `Find files \ ъъаа`, using `separator`.
 
-Precedence is `alongside` → `relative_group` → `hide`. Set
-`which_key.enabled = false` to restore which-key's default listing. Both
-which-key 3.x and 2.x are supported; group labels are copied when which-key
-exposes them.
+Precedence is `alongside` → `relative_group` → `hide`. Both which-key 3.x and
+2.x are supported; group labels are copied when which-key exposes them.
+
+With the default `native.api = true`, disabling `which_key` does not bring
+mirrored entries back to which-key; set `native.api = false` if you want Lua
+consumers to see the mirrors again.
+
+### Native mapping listings
+
+Mirrors are real keymaps, so native listings would otherwise show both the
+original and the national variant. The `native` section controls the cleanup:
+
+- `commandline = true` filters `:map`, `:nmap`, `:verbose map`,
+  `:filter /…/ nmap` and `:map <buffer>`. Mirrors are removed only while the
+  native command is executing and restored immediately afterwards. Map
+  definitions are never executed with mirrors removed.
+- `api = true` filters `vim.api.nvim_get_keymap()` and
+  `nvim_buf_get_keymap()`. This covers Snacks, Telescope, which-key, mini.extra
+  and other Lua consumers.
+- The getter filter is read-only: real mirror bindings stay active in every
+  window and buffer. Only the returned listing is filtered.
+- `<Tab>` completion for `:map`/`:nmap` is intentionally not filtered; it may
+  show mirrors. The listing produced after pressing Enter is clean.
+- `maparg()` and `getcompletion(…, "mapping")` are not filtered because which-key
+  triggers and other plugins use them for actual key handling.
+- Programmatic `<Cmd>nmap<CR>`, `:execute "nmap"`, `:redir` captures and
+  multi-command `|` lines are not filtered.
+
+`native = false` disables the whole layer. To keep native `:map` output clean
+but let Snacks/Telescope see mirrors, use `native = { api = false }`.
 
 ## Commands
 

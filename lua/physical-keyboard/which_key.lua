@@ -56,7 +56,8 @@ end
 
 local function clean_desc(value, fallback)
 	value = tostring(value or "")
-	value = value:gsub("^" .. MARK, "")
+	value = value:gsub("^" .. vim.pesc(mappings.MIRROR_MARK or (MARK .. "mirror:")), "")
+	value = value:gsub("^" .. vim.pesc(MARK), "")
 	if value == "" then
 		return fallback or ""
 	end

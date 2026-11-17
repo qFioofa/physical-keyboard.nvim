@@ -1069,6 +1069,113 @@ do
 	package.loaded["which-key.buf"] = saved.buf
 end
 
+
+---------------------------------------------------------------------------
+-- 18. native listings
+---------------------------------------------------------------------------
+do
+	print("\n== native listings ==")
+	disable()
+	local native = require("physical-keyboard.native")
+
+	local cfg = config.resolve({ native = false })
+	eq(cfg.native.enabled, false, "native=false disables native listings")
+	local partial = config.resolve({ native = { api = false } })
+	eq(partial.native.api, false, "native.api can be disabled independently")
+	eq(partial.native.commandline, true, "native.commandline keeps its default")
+	local invalid = config.resolve({ native = { api = "yes" } })
+	eq(invalid.native.api, true, "invalid native.api falls back to true")
+	truthy(#invalid.warnings > 0, "invalid native options warn")
+	truthy(options.spec("native.api") ~= nil, "native options are editable")
+
+	eq(native.analyze("nmap") and native.analyze("nmap").listing, true, "nmap is a listing")
+	eq(native.analyze("nm") and native.analyze("nm").listing, true, "abbreviated nmap is a listing")
+	eq(native.analyze("nmap <buffer>") and native.analyze("nmap <buffer>").listing, true, "nmap <buffer> is a listing")
+	eq(native.analyze("nmap <leader>f") and native.analyze("nmap <leader>f").listing, true, "single LHS is a listing")
+	eq(native.analyze("verbose nmap") and native.analyze("verbose nmap").listing, true, "verbose nmap is a listing")
+	eq(native.analyze("filter /x/ nmap") and native.analyze("filter /x/ nmap").listing, true, "filtered nmap is a listing")
+	eq(native.analyze("map!") and native.analyze("map!").listing, true, "map! is a listing")
+	eq(
+		native.analyze("nmap <expr> <leader>f") and native.analyze("nmap <expr> <leader>f").listing,
+		true,
+		"nmap <expr> with only an LHS is a listing"
+	)
+	eq(native.analyze("nmap <leader>f x").listing, false, "nmap lhs rhs is a definition")
+	eq(native.analyze("nmap <expr> <leader>f x").listing, false, "expr definition is not a listing")
+	eq(native.analyze("nmap <buffer> <leader>f x").listing, false, "buffer definition is not a listing")
+	eq(native.analyze("nunmap x"), nil, "nunmap is not a listing")
+	eq(native.analyze("mapclear"), nil, "mapclear is not a listing")
+	eq(native.analyze("nmap | echo 1"), nil, "multi-command lines are ignored")
+
+	mappings.cleanup()
+	mappings.setup({ active_ids = { "ru" } })
+	mappings.hack()
+
+	vim.keymap.set("n", "zqzx", function() end, { desc = "native global" })
+	local global_variant = mappings.variants("zqzx")[1].lhs
+	truthy(vim.fn.maparg(global_variant, "n") ~= "", "global mirror exists before native filtering")
+	local mirror = vim.fn.maparg(global_variant, "n", false, true)
+	truthy(mappings.is_mirror(mirror), "mirrors use the dedicated pkb:mirror: marker")
+
+	local buf = vim.api.nvim_create_buf(false, true)
+	vim.keymap.set("n", "bqbz", function() end, { buffer = buf, desc = "native buffer" })
+	local buffer_variant = mappings.variants("bqbz")[1].lhs
+
+	native.setup({ enabled = true, commandline = true, api = true })
+	truthy(native.status().api_patched, "native patches Lua keymap getters")
+
+	local function lhs_list(list)
+		local result = {}
+		for _, item in ipairs(list) do
+			result[item.lhs] = true
+		end
+		return result
+	end
+
+	local global_list = lhs_list(vim.api.nvim_get_keymap("n"))
+	truthy(global_list["zqzx"], "getter keeps the original global mapping")
+	truthy(not global_list[global_variant], "getter hides the global mirror")
+	local buffer_list = lhs_list(vim.api.nvim_buf_get_keymap(buf, "n"))
+	truthy(buffer_list["bqbz"], "buffer getter keeps the original mapping")
+	truthy(not buffer_list[buffer_variant], "buffer getter hides the buffer mirror")
+	truthy(vim.fn.maparg(global_variant, "n") ~= "", "getter filtering leaves the real mirror active")
+
+	vim.keymap.set("n", "uiq", function() end, { desc = "pkb: UI internal" })
+	local ui_mapping = nil
+	for _, item in ipairs(vim.api.nvim_get_keymap("n")) do
+		if item.lhs == "uiq" then
+			ui_mapping = item
+		end
+	end
+	truthy(ui_mapping ~= nil, "internal pkb: mappings are not treated as mirrors")
+
+	local removed = mappings.suspend_mirrors()
+	truthy(removed > 0, "suspend_mirrors removes mirrors")
+	truthy(mappings.is_suspended(), "mapper reports a suspended state")
+	eq(vim.fn.maparg(global_variant, "n"), "", "suspended global mirror is absent")
+	local restored = mappings.resume_mirrors()
+	truthy(restored > 0, "resume_mirrors restores mirrors")
+	truthy(vim.fn.maparg(global_variant, "n") ~= "", "restored global mirror is active")
+	truthy(not mappings.is_suspended(), "mapper clears the suspended state")
+
+	native.setup({ enabled = true, commandline = true, api = false })
+	local unfiltered = lhs_list(vim.api.nvim_get_keymap("n"))
+	truthy(unfiltered[global_variant], "native.api=false exposes mirrors again")
+	native.setup({ enabled = true, commandline = true, api = true })
+	truthy(not lhs_list(vim.api.nvim_get_keymap("n"))[global_variant], "native.api=true hides mirrors again")
+
+	native.disable()
+	truthy(not native.status().api_patched, "native.disable restores the getters")
+	local after_disable = lhs_list(vim.api.nvim_get_keymap("n"))
+	truthy(after_disable[global_variant], "getters expose mirrors after native.disable")
+
+	mappings.unhack()
+	mappings.cleanup()
+	pcall(vim.keymap.del, "n", "zqzx")
+	pcall(vim.keymap.del, "n", "uiq")
+	pcall(vim.api.nvim_buf_delete, buf, { force = true })
+end
+
 ---------------------------------------------------------------------------
 -- Summary
 ---------------------------------------------------------------------------

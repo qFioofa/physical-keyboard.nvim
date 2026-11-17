@@ -113,6 +113,13 @@ local function render_overview(data, ctx)
 		kv("Fallback", cfg.fallback or "—"),
 		kv("langmap", ("%d pairs"):format(status.langmap_pairs or 0)),
 		kv("Mappings", ("%d mirrored"):format(mappings.created or 0)),
+		kv(
+			"Native listings",
+			(status.native and status.native.enabled)
+					and (status.native.suspended and "filtering" or "filtered")
+				or "off",
+			(status.native and status.native.enabled) and "PhyKeyboardUIValue" or "PhyKeyboardUIMuted"
+		),
 		kv("Cmdline", ("%d aliases"):format(cmdline.count or 0)),
 		kv("Echo", (echo.enabled and "on / " or "off / ") .. (echo.mode or "all")),
 		kv("Notify", status.notify or cfg.notify or "—"),
@@ -783,7 +790,7 @@ local function render_config_effective(data, ctx)
 	end
 	add(L(C("  Set overrides = false in setup() to ignore this file.", "PhyKeyboardUIMuted")))
 
-	for _, section_name in ipairs({ "detect", "langmap", "mappings", "cmdline", "echo" }) do
+	for _, section_name in ipairs({ "detect", "langmap", "mappings", "native", "cmdline", "echo" }) do
 		lines[#lines + 1] = {}
 		lines[#lines + 1] = section(ctx.width, section_name:upper())
 		local values = cfg[section_name] or {}

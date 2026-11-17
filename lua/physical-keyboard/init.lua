@@ -4,6 +4,7 @@ local langmap = require("physical-keyboard.langmap")
 local detect = require("physical-keyboard.detect")
 local mappings = require("physical-keyboard.mappings")
 local which_key = require("physical-keyboard.which_key")
+local native = require("physical-keyboard.native")
 local cmdline = require("physical-keyboard.cmdline")
 local echo = require("physical-keyboard.echo")
 local commands = require("physical-keyboard.commands")
@@ -402,6 +403,7 @@ local function wire(cfg)
 		active_ids = M.effective_layouts(),
 	})
 
+	native.disable()
 	mappings.cleanup()
 	mappings.setup({
 		enabled = cfg.mappings.enabled,
@@ -415,6 +417,11 @@ local function wire(cfg)
 	else
 		mappings.unhack()
 	end
+	native.setup({
+		enabled = cfg.enable and cfg.mappings.enabled and cfg.native.enabled,
+		commandline = cfg.native.commandline,
+		api = cfg.native.api,
+	})
 	which_key.setup(cfg.which_key)
 	if cfg.enable and cfg.mappings.enabled then
 		which_key.refresh()
@@ -485,6 +492,7 @@ function M.status()
 			excluded = #cfg.mappings.exclude,
 		},
 		which_key = which_key.status(),
+		native = native.status(),
 		cmdline = {
 			enabled = cfg.cmdline.enabled,
 			count = cmdline.count(),
@@ -599,6 +607,9 @@ function M.enable()
 	if cfg.mappings.enabled and cfg.mappings.hack_keymap then
 		mappings.hack()
 	end
+	if cfg.mappings.enabled and cfg.native.enabled then
+		native.enable()
+	end
 	if cfg.mappings.enabled then
 		which_key.enable()
 	end
@@ -626,6 +637,7 @@ function M.disable()
 	M._apply_generation = M._apply_generation + 1
 	detect.invalidate()
 
+	native.disable()
 	mappings.unhack()
 	mappings.cleanup()
 	which_key.disable()
@@ -836,6 +848,7 @@ return {
 
   -- mappings = { exclude = { "<leader>f" } },
   -- which_key = { relative_group = true },
+  -- native = { enabled = true, commandline = true, api = true },
   -- cmdline = { aliases = { "tabnew" } },
 }
 ]]
