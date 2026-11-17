@@ -1,4 +1,5 @@
 local layouts = require("physical-keyboard.layouts")
+local overrides_store = require("physical-keyboard.overrides")
 
 local M = {}
 
@@ -7,6 +8,10 @@ M.defaults = {
 	env = true,
 	enable = true,
 	notify = "errors",
+	overrides = {
+		enabled = true,
+		file = nil,
+	},
 	active_layouts = { "ru" },
 	fallback = "unique",
 	toggle_key = false,
@@ -32,6 +37,18 @@ M.defaults = {
 		exclude = {},
 		extra = {},
 	},
+	which_key = {
+		enabled = true,
+		display = nil,
+		relative_group = false,
+		alongside = false,
+		separator = "\\",
+	},
+	native = {
+		enabled = true,
+		commandline = true,
+		api = true,
+	},
 	cmdline = {
 		enabled = true,
 		aliases = {},
@@ -50,6 +67,7 @@ local KNOWN = {
 		enable = true,
 		enabled = true,
 		notify = true,
+		overrides = true,
 		active_layouts = true,
 		layouts = true,
 		fallback = true,
@@ -57,6 +75,8 @@ local KNOWN = {
 		detect = true,
 		langmap = true,
 		mappings = true,
+		which_key = true,
+		native = true,
 		cmdline = true,
 		echo = true,
 		userLayouts = true,
@@ -81,6 +101,18 @@ local KNOWN = {
 		modes = true,
 		exclude = true,
 		extra = true,
+	},
+	which_key = {
+		enabled = true,
+		display = true,
+		relative_group = true,
+		alongside = true,
+		separator = true,
+	},
+	native = {
+		enabled = true,
+		commandline = true,
+		api = true,
 	},
 	cmdline = { enabled = true, aliases = true, extra = true },
 	echo = { enabled = true, mode = true },
@@ -169,6 +201,48 @@ local function normalize_notify(value, warnings)
 		M.defaults.notify
 	)
 	return M.defaults.notify
+end
+
+---@param value any
+---@param warnings string[]
+---@return { enabled: boolean, file: string|nil }
+local function normalize_overrides(value, warnings)
+	if value == nil then
+		return { enabled = true, file = nil }
+	end
+	if type(value) == "boolean" then
+		return { enabled = value, file = nil }
+	end
+	if type(value) ~= "table" then
+		warnings[#warnings + 1] = "overrides must be false, true or a table"
+		return { enabled = true, file = nil }
+	end
+	local enabled = value.enabled
+	if enabled == nil then
+		enabled = value.enable
+	end
+	if enabled == nil then
+		enabled = true
+	end
+	if type(enabled) ~= "boolean" then
+		warnings[#warnings + 1] = "overrides.enabled must be true or false"
+		enabled = true
+	end
+	local file = value.file
+	if file ~= nil and (type(file) ~= "string" or file == "") then
+		warnings[#warnings + 1] = "overrides.file must be a path"
+		file = nil
+	end
+	return { enabled = enabled, file = file }
+end
+
+---@param value string|nil
+---@return string
+function M.overrides_path(value)
+	if type(value) == "table" and type(value.file) == "string" and value.file ~= "" then
+		return vim.fn.expand(value.file)
+	end
+	return overrides_store.path()
 end
 
 ---@param mode string|nil
@@ -301,6 +375,83 @@ local function normalize_modes(value, warnings)
 	return valid
 end
 
+local function normalize_which_key(value, warnings)
+	if value == nil then
+		return vim.deepcopy(M.defaults.which_key)
+	end
+	if type(value) == "boolean" then
+		local result = vim.deepcopy(M.defaults.which_key)
+		result.enabled = value
+		return result
+	end
+	if type(value) ~= "table" then
+		warnings[#warnings + 1] = "which_key must be a table or false"
+		return vim.deepcopy(M.defaults.which_key)
+	end
+
+	local result = merge(M.defaults.which_key, value)
+
+	if type(result.enabled) ~= "boolean" then
+		warnings[#warnings + 1] = "which_key.enabled must be true or false"
+		result.enabled = M.defaults.which_key.enabled
+	end
+
+	if result.display ~= nil and result.display ~= false then
+		if type(result.display) == "string" and result.display:lower() == "hide" then
+			result.display = "hide"
+		else
+			warnings[#warnings + 1] = "which_key.display must be 'hide' or nil"
+			result.display = M.defaults.which_key.display
+		end
+	end
+	if result.display == false then
+		result.display = nil
+	end
+
+	if type(result.relative_group) ~= "boolean" then
+		warnings[#warnings + 1] = "which_key.relative_group must be true or false"
+		result.relative_group = M.defaults.which_key.relative_group
+	end
+	if type(result.alongside) ~= "boolean" then
+		warnings[#warnings + 1] = "which_key.alongside must be true or false"
+		result.alongside = M.defaults.which_key.alongside
+	end
+	if type(result.separator) ~= "string" or result.separator == "" then
+		warnings[#warnings + 1] = "which_key.separator must be a non-empty string"
+		result.separator = M.defaults.which_key.separator
+	end
+
+	return result
+end
+
+local function normalize_native(value, warnings)
+	if value == nil then
+		return vim.deepcopy(M.defaults.native)
+	end
+	if type(value) == "boolean" then
+		local result = vim.deepcopy(M.defaults.native)
+		result.enabled = value
+		return result
+	end
+	if type(value) ~= "table" then
+		warnings[#warnings + 1] = "native must be a table or false"
+		return vim.deepcopy(M.defaults.native)
+	end
+
+	local result = merge(M.defaults.native, value)
+	if type(result.enabled) ~= "boolean" then
+		warnings[#warnings + 1] = "native.enabled must be true or false"
+		result.enabled = M.defaults.native.enabled
+	end
+	for _, key in ipairs({ "commandline", "api" }) do
+		if type(result[key]) ~= "boolean" then
+			warnings[#warnings + 1] = ("native.%s must be true or false"):format(key)
+			result[key] = M.defaults.native[key]
+		end
+	end
+	return result
+end
+
 local function normalize_strings(value, name, warnings)
 	local list = normalize_list(value) or {}
 	local valid = {}
@@ -386,8 +537,9 @@ local function apply_env(result, warnings, used)
 end
 
 ---@param opts table|nil
+---@param extra table|nil session-only overrides merged after the override file
 ---@return table
-function M.resolve(opts)
+function M.resolve(opts, extra)
 	opts = vim.deepcopy(opts or {})
 
 	local warnings = {}
@@ -459,6 +611,35 @@ function M.resolve(opts)
 	local result = merge(M.defaults, file_opts or {})
 	opts.config_file = nil
 	result = merge(result, opts)
+	result.overrides = normalize_overrides(result.overrides, warnings)
+
+	local override_file = nil
+	local override_attempted = nil
+	local override_values = nil
+	if result.overrides.enabled then
+		override_attempted = M.overrides_path(result.overrides)
+		local loaded, err = overrides_store.load(override_attempted)
+		if err then
+			warnings[#warnings + 1] = ("override file '%s': %s"):format(
+				override_attempted,
+				tostring(err)
+			)
+		elseif loaded then
+			loaded = overrides_store.sanitize(loaded)
+			check_unknown(loaded, KNOWN.top, "overrides.", warnings)
+			override_file = override_attempted
+			override_values = loaded
+			result = merge(result, loaded)
+			result.overrides = normalize_overrides(result.overrides, warnings)
+		end
+	end
+
+	if type(extra) == "table" then
+		local session = overrides_store.sanitize(extra)
+		check_unknown(session, KNOWN.top, "session overrides.", warnings)
+		result = merge(result, session)
+		result.overrides = normalize_overrides(result.overrides, warnings)
+	end
 
 	if type(custom) == "table" or type(file_custom) == "table" then
 		local merged_custom = {}
@@ -486,12 +667,16 @@ function M.resolve(opts)
 			result[section] = vim.deepcopy(M.defaults[section])
 		end
 	end
+	result.which_key = normalize_which_key(result.which_key, warnings)
+	result.native = normalize_native(result.native, warnings)
 
 	check_unknown(opts, KNOWN.top, "", warnings)
 	check_unknown(file_opts or {}, KNOWN.top, "", warnings)
 	check_unknown(result.detect, KNOWN.detect, "detect.", warnings)
 	check_unknown(result.langmap, KNOWN.langmap, "langmap.", warnings)
 	check_unknown(result.mappings, KNOWN.mappings, "mappings.", warnings)
+	check_unknown(result.which_key, KNOWN.which_key, "which_key.", warnings)
+	check_unknown(result.native, KNOWN.native, "native.", warnings)
 	check_unknown(result.cmdline, KNOWN.cmdline, "cmdline.", warnings)
 	check_unknown(result.echo, KNOWN.echo, "echo.", warnings)
 
@@ -560,12 +745,20 @@ function M.resolve(opts)
 		file = file_path,
 		attempted = attempted_file,
 		env = used,
+		override_file = override_file,
+		override_attempted = override_attempted,
+		override_enabled = result.overrides.enabled,
+		overrides = override_values,
 	}
 
 	apply_env(result, warnings, used)
 	result.source.file = file_path
 	result.source.attempted = attempted_file
 	result.source.env = used
+	result.source.override_file = override_file
+	result.source.override_attempted = override_attempted
+	result.source.override_enabled = result.overrides.enabled
+	result.source.overrides = override_values
 
 	-- Environment overrides may change active layouts, so normalize again.
 	if used.layout then

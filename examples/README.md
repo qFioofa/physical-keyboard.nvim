@@ -7,7 +7,7 @@
 | `multilingual.lua` | several layouts, automatic detection |
 | `config-file.lua` | external `physical-keyboard.lua` |
 | `custom-layout.lua` | user-defined layout |
-| `mappings.lua` | exclusions, extras, toggle key, aliases |
+| `mappings.lua` | exclusions, extras, which-key display, toggle key, aliases |
 | `remote.lua` | SSH / remote Neovim |
 | `lualine.lua` | lualine statusline component |
 

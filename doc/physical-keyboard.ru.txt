@@ -19,11 +19,12 @@ Visual и Operator-pending режимах.  Наберите `сшц` — Neovim
   9. Зеркалирование маппингов ........... |physical-keyboard-ru-mappings|
  10. Алиасы командной строки ............ |physical-keyboard-ru-cmdline|
  11. Команды ............................ |physical-keyboard-ru-commands|
- 12. Статуслайн ......................... |physical-keyboard-ru-statusline|
- 13. События и колбэки .................. |physical-keyboard-ru-events|
- 14. Настройка через ИИ ................. |physical-keyboard-ru-ai|
- 15. Решение проблем .................... |physical-keyboard-ru-troubleshooting|
- 16. Лицензия ........................... |physical-keyboard-ru-license|
+ 12. UI-панель .......................... |physical-keyboard-ru-ui|
+ 13. Статуслайн ......................... |physical-keyboard-ru-statusline|
+ 14. События и колбэки .................. |physical-keyboard-ru-events|
+ 15. Настройка через ИИ ................. |physical-keyboard-ru-ai|
+ 16. Решение проблем .................... |physical-keyboard-ru-troubleshooting|
+ 17. Лицензия ........................... |physical-keyboard-ru-license|
 
 ==============================================================================
 1. ВВЕДЕНИЕ                                     *physical-keyboard-ru-intro*
@@ -119,6 +120,20 @@ US-позиция `:` — на Shift+;.  US-позиция даёт `Ж`, и 'la
       extra = {},               -- [английский lhs] = национальный lhs
     },
 
+    which_key = {
+      enabled = true,
+      display = nil,            -- nil / "hide": скрыть зеркала, оставить оригиналы
+      relative_group = false,   -- копировать label группы в зеркало
+      alongside = false,        -- добавить зеркальные клавиши к подписи оригинала
+      separator = "\\",
+    },
+
+    native = {
+      enabled = true,
+      commandline = true,       -- вывод :map/:nmap
+      api = true,               -- nvim_get_keymap/nvim_buf_get_keymap
+    },
+
     cmdline = {
       enabled = true,
       aliases = {},             -- дополнительные английские Ex-команды
@@ -129,6 +144,9 @@ US-позиция `:` — на Shift+;.  US-позиция даёт `Ж`, и 'la
       enabled = false,
       mode = "all",
     },
+
+    -- UI changes are stored in a JSON override file; false ignores it.
+    overrides = true,
   })
 <
 `notify = false` означает `"errors"`.  Чтобы полностью отключить уведомления,
@@ -159,9 +177,13 @@ US-позиция `:` — на Shift+;.  US-позиция даёт `Ж`, и 'la
   `:PhyKeyboardReload`         перечитать файл и выполнить setup()
   `:PhyKeyboardConfig`         показать действующую конфигурацию
   `:PhyKeyboardConfig --json`  конфигурация в JSON
+  `:PhyKeyboardConfigReset`    удалить UI-overrides и перечитать конфиг
 
-Приоритет: значения по умолчанию, затем файл, затем `setup()`, затем
-переменные окружения.
+Приоритет: значения по умолчанию, затем файл, затем `setup()`, затем файл
+override-настроек, затем переменные окружения.
+
+Изменения из UI хранятся в `stdpath("state")/physical-keyboard/overrides.json`.
+Укажите `overrides = false` в `setup()`, чтобы не загружать этот файл.
 
 ==============================================================================
 6. ПЕРЕМЕННЫЕ ОКРУЖЕНИЯ                         *physical-keyboard-ru-env*
@@ -171,6 +193,7 @@ US-позиция `:` — на Shift+;.  US-позиция даёт `Ж`, и 'la
 `PKB_DISABLE=1` отключить плагин на этот запуск
 `PKB_DEBUG=1`   включить echo, debug и все уведомления
 `PKB_NOTIFY`    `all`, `errors` или `off`
+`PKB_OVERRIDES` свой путь к JSON-файлу override-настроек
 
 Примеры: >sh
   PKB_LAYOUT=ru nvim
@@ -256,6 +279,64 @@ runtime-набор, даже если её нет в `active_layouts`.
 <
 `exclude` имеет приоритет над `extra`.
 
+Интеграция с which-key: >lua
+  which_key = {
+    enabled = true,
+    display = nil,            -- nil или "hide"
+    relative_group = false,
+    alongside = false,
+    separator = "\\",
+  },
+<
+`display = nil` и `"hide"` (по умолчанию) скрывают зеркальные маппинги в
+which-key, оставляя только оригинальные английские записи.
+
+`relative_group = true` показывает зеркальный маппинг под переведённым
+префиксом с исходным label и иконкой группы.  Например, `<leader>f` с
+подписью "find" даёт `<leader>а` с подписью "find".  which-key не может
+поместить `<leader>аа` внутрь исходной группы `<leader>f`; зеркальный префикс
+— это физический эквивалент.
+
+`alongside = true` добавляет зеркальные клавиши к подписи оригинала:
+
+  Find files \ ъъаа
+
+`separator` по умолчанию `\`.  Приоритет: `alongside` -> `relative_group` ->
+`hide`.  which-key 3.x поддерживается напрямую; 2.x использует legacy
+`register`, а label групп копируется только если его удаётся найти.
+
+При `native.api = true` (по умолчанию) `which_key.enabled = false` больше не
+возвращает зеркала в which-key; для этого используйте `native.api = false`.
+
+9.1 СПИСКИ НАТИВНЫХ МАППИНГОВ                   *physical-keyboard-ru-native*
+
+Зеркала — это реальные keymap'ы, поэтому нативные списки показывают и
+оригинал, и национальный вариант.  Секция `native` убирает дубликаты:
+>lua
+  native = {
+    enabled = true,
+    commandline = true,     -- вывод :map/:nmap/:verbose map
+    api = true,             -- nvim_get_keymap/nvim_buf_get_keymap
+  },
+<
+`commandline = true` временно удаляет зеркала только на время выполнения
+нативного листинга и сразу возвращает их.  Определения маппингов
+(`:nmap lhs rhs`) выполняются с целыми зеркалами.  Автодополнение `<Tab>` для
+`:map`/`:nmap` намеренно не фильтруется.
+
+`api = true` оборачивает `vim.api.nvim_get_keymap()` и
+`vim.api.nvim_buf_get_keymap()` и убирает записи с маркером `pkb:mirror:`.
+Это покрывает Snacks, Telescope, which-key и другие Lua-плагины.  Фильтр
+только читает: реальные зеркала остаются активными в любом окне и буфере.
+
+Ограничения:
+- `vim.fn.maparg()` и `getcompletion(..., "mapping")` не фильтруются: на них
+  держатся триггеры which-key и обработка клавиш в других плагинах.
+- Программные `<Cmd>nmap<CR>`, `:execute "nmap"`, захват через `:redir` и
+  цепочки через `|` не фильтруются.
+- Если Lua-плагину нужны зеркала, используйте `native = { api = false }`.
+- `native = false` отключает весь слой.
+
 ==============================================================================
 10. АЛИАСЫ КОМАНДНОЙ СТРОКИ               *physical-keyboard-ru-cmdline*
 
@@ -277,8 +358,10 @@ runtime-набор, даже если её нет в `active_layouts`.
 11. КОМАНДЫ                                     *physical-keyboard-ru-commands*
 
 `:PhyKeyboard`                  общая информация
+:PhyKeyboardUI`                интерактивная плавающая панель
 `:PhyKeyboardStatus`            состояние определения, langmap и маппингов
 `:PhyKeyboardConfig [--json]`   действующая конфигурация
+`:PhyKeyboardConfigReset`       удалить UI-overrides и перечитать конфиг
 `:PhyKeyboardDoctor [--json]`   полный отчёт об окружении
 `:PhyKeyboardList`              встроенные раскладки
 `:PhyKeyboardDetect`            сырой результат определения
@@ -301,7 +384,41 @@ runtime-набор, даже если её нет в `active_layouts`.
 `:PhyKeyboardDisableLayout`, `:PhyKeyboardSet`.
 
 ==============================================================================
-12. СТАТУСЛАЙН                                *physical-keyboard-ru-statusline*
+12. UI-ПАНЕЛЬ                                        *physical-keyboard-ru-ui*
+
+`:PhyKeyboardUI` открывает плавающую панель.  Слева
+дерево разделов и страниц, справа содержимое выбранной страницы.  Корневые
+узлы работают как разделы: `Tab` и `S-Tab` переключают их.
+
+Клавиши по умолчанию:
+  j / k, стрелки         перемещение
+  h / l                  фокус на дерево / содержимое (как [ / ])
+  <Left> / <Right>       свернуть/развернуть; к группе/внутрь группы
+  [ / ]                  фокус на дерево / содержимое
+  i / o                  открыть пункт / раскрыть группу режима
+  <Space>                переключить boolean / открыть выбор значения
+  /                      поиск биндов в нижнем окне справки
+  <CR>                   активировать
+  Tab / <S-Tab>          следующий / предыдущий раздел
+  g / G                  первый / последний пункт
+  <C-d> / <C-u>          прокрутка содержимого
+  r                      обновить данные и запустить проверку провайдеров
+  R                      удалить UI-overrides (Config -> Effective)
+  ?                      справка
+  <Esc>                  из содержимого в дерево, затем закрыть
+  q                      закрыть
+
+Страницы: Status, Layouts, Detection, Mappings, Cmdline, Echo, Config и Doctor.
+Config -> Effective редактируется: boolean переключается по Enter/Space, а
+enum и multi открывают отдельное окно с описанием, примером, особенностями и
+кнопкой Cancel.  Изменения пишутся в override-файл.  Остальные страницы только
+читают состояние.  Проверка detection-провайдеров выполняется асинхронно.
+
+Группы подсветки имеют префикс `PhyKeyboardUI*` и по умолчанию ссылаются на
+встроенные группы Neovim.  Их можно переопределить в colorscheme.
+
+==============================================================================
+13. СТАТУСЛАЙН                                *physical-keyboard-ru-statusline*
 
 Компонент статуслайна: >lua
   vim.o.statusline = "%{v:lua.require'physical-keyboard'.statusline()} %f"
@@ -327,7 +444,7 @@ lualine: >lua
 `vim.g.physical_keyboard_layout` содержит `ru`, `de`, `en` или пустую строку.
 
 ==============================================================================
-13. СОБЫТИЯ И КОЛБЭКИ                        *physical-keyboard-ru-events*
+14. СОБЫТИЯ И КОЛБЭКИ                        *physical-keyboard-ru-events*
 
 События `User`:
   `PhysicalKeyboardEnabled`
@@ -356,7 +473,7 @@ lualine: >lua
 Те же данные передаются в `detect.on_change`.
 
 ==============================================================================
-14. НАСТРОЙКА ЧЕРЕЗ ИИ                          *physical-keyboard-ru-ai*
+15. НАСТРОЙКА ЧЕРЕЗ ИИ                          *physical-keyboard-ru-ai*
 
 ИИ-ассистент может настроить плагин по запросу пользователя:
 
@@ -378,7 +495,7 @@ Headless-отчёт: >sh
 рецептами.  Не устанавливайте сторонние утилиты без разрешения пользователя.
 
 ==============================================================================
-15. РЕШЕНИЕ ПРОБЛЕМ                 *physical-keyboard-ru-troubleshooting*
+16. РЕШЕНИЕ ПРОБЛЕМ                 *physical-keyboard-ru-troubleshooting*
 
 `E357: 'langmap': Matching character missing`
   Специальный символ не экранирован.  Это ошибка плагина — сообщите о ней.
@@ -414,7 +531,7 @@ Insert mode переводит текст
   Проверьте `:PhyKeyboardStatus`.
 
 ==============================================================================
-16. ЛИЦЕНЗИЯ                                     *physical-keyboard-ru-license*
+17. ЛИЦЕНЗИЯ                                     *physical-keyboard-ru-license*
 
 MIT.  Данные раскладок — ai/convert-layout (MIT).  Зеркалирование маппингов
 вдохновлено Wansmer/langmapper.nvim (MIT).  Идея unique-submap —

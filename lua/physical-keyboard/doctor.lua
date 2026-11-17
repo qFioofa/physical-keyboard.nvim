@@ -139,6 +139,8 @@ function M.collect(core, opts)
 			probes = probes,
 			environment = env,
 		},
+		which_key = config.sanitize(status.which_key or {}),
+		native = config.sanitize(status.native or {}),
 		status = config.sanitize(status),
 	}
 
@@ -166,6 +168,19 @@ function M.format(info)
 		("config file: %s"):format(tostring(info.config.file)),
 		("active layouts: %s"):format(table.concat(info.layouts.active, ", ")),
 		("current layout: %s"):format(tostring(info.layouts.current)),
+		("which-key: available=%s version=%s hidden=%s groups=%s alongside=%s"):format(
+			tostring(info.which_key.available),
+			tostring(info.which_key.version),
+			tostring(info.which_key.hidden),
+			tostring(info.which_key.groups),
+			tostring(info.which_key.alongside)
+		),
+		("native listings: enabled=%s commandline=%s api=%s suspended=%s"):format(
+			tostring(info.native.enabled),
+			tostring(info.native.commandline),
+			tostring(info.native.api_patched),
+			tostring(info.native.suspended)
+		),
 		("detected: provider=%s raw=%s layout=%s"):format(
 			tostring(info.detection.last.provider),
 			tostring(info.detection.last.raw),

@@ -112,6 +112,41 @@ function M.check()
 		info(("excluded mapping patterns: %d"):format(status.mappings.excluded))
 	end
 
+	local which_key = status.which_key or {}
+	if which_key.enabled then
+		if which_key.available then
+			local mode = which_key.alongside and "alongside"
+				or which_key.relative_group and "relative_group"
+				or "hide"
+			ok(("which-key %s integration: %s"):format(tostring(which_key.version or "?"), mode))
+			info(
+				("which-key specs: hidden=%d groups=%d visible=%d alongside=%d"):format(
+					which_key.hidden or 0,
+					which_key.groups or 0,
+					which_key.visible or 0,
+					which_key.alongside or 0
+				)
+			)
+		else
+			info("which-key is not loaded; mirrored mappings use the default listing")
+		end
+	end
+
+	local native = status.native or {}
+	if native.enabled then
+		ok(
+			("native listings: commandline=%s api=%s"):format(
+				tostring(native.commandline),
+				tostring(native.api_patched)
+			)
+		)
+		if native.suspended then
+			warn(("mirrors temporarily suspended: %d"):format(native.suspended_count or 0))
+		end
+	else
+		info("native listing filter is disabled; :nmap and keymap pickers may show duplicates")
+	end
+
 	if status.cmdline.enabled then
 		ok(("command-line aliases: %d"):format(status.cmdline.count))
 	else

@@ -10,6 +10,7 @@ local layouts = require("physical-keyboard.layouts")
 local M = {}
 
 local MARK = "pkb:"
+local MIRROR = "pkb:mirror:"
 
 local state = {
 	enabled = true,
@@ -18,10 +19,23 @@ local state = {
 	forwards = {},
 	hacked = false,
 	orig = {},
+	raw = {
+		get = vim.api.nvim_get_keymap,
+		buf_get = vim.api.nvim_buf_get_keymap,
+		set = vim.api.nvim_set_keymap,
+		buf_set = vim.api.nvim_buf_set_keymap,
+		del = vim.api.nvim_del_keymap,
+		buf_del = vim.api.nvim_buf_del_keymap,
+	},
 	created = {},
 	created_set = {},
+	created_by_key = {},
+	restore = {},
+	suspended = {},
+	suspend_active = false,
 	exclude = {},
 	extra = {},
+	on_change = nil,
 }
 
 local function is_special_sequence(lhs)
@@ -217,6 +231,19 @@ function M.is_ours(opts)
 		and opts.desc:sub(1, #MARK) == MARK
 end
 
+--- Returns true when the description marks a mapping as a mirrored variant.
+--- Internal UI mappings also use the broad `pkb:` marker, so they must not be
+--- treated as mirrors.
+---@param opts table|nil
+---@return boolean
+function M.is_mirror(opts)
+	return type(opts) == "table"
+		and type(opts.desc) == "string"
+		and opts.desc:sub(1, #MIRROR) == MIRROR
+end
+
+M.MIRROR_MARK = MIRROR
+
 local function capture_originals()
 	if state.orig.set then
 		return
@@ -227,23 +254,69 @@ local function capture_originals()
 	state.orig.buf_del = vim.api.nvim_buf_del_keymap
 end
 
-local function record(global, bufnr, mode, lhs)
+local function record(global, bufnr, mode, lhs, source_lhs, source_desc, layout, rhs, opts)
 	local key
 	if global then
 		key = "g|" .. mode .. "|" .. lhs
 	else
 		key = "b|" .. tostring(bufnr) .. "|" .. mode .. "|" .. lhs
 	end
-	if state.created_set[key] then
-		return
+
+	local item = state.created_by_key[key]
+	if not item then
+		item = {
+			global = global,
+			bufnr = bufnr,
+			mode = mode,
+			lhs = lhs,
+		}
+		state.created[#state.created + 1] = item
+		state.created_by_key[key] = item
+		state.created_set[key] = true
 	end
-	state.created_set[key] = true
-	state.created[#state.created + 1] = {
-		global = global,
-		bufnr = bufnr,
-		mode = mode,
-		lhs = lhs,
+
+	item.source_lhs = source_lhs or item.source_lhs or lhs
+	item.source_desc = source_desc or item.source_desc or source_lhs or lhs
+	item.layout = layout or item.layout
+	state.restore[key] = {
+		rhs = rhs or "",
+		opts = vim.deepcopy(opts or {}),
 	}
+end
+
+local function restore_key(global, bufnr, mode, lhs)
+	if global then
+		return "g|" .. mode .. "|" .. lhs
+	end
+	return "b|" .. tostring(bufnr) .. "|" .. mode .. "|" .. lhs
+end
+
+local function key_norm(lhs)
+	if type(lhs) ~= "string" then
+		return lhs
+	end
+	local ok, value = pcall(function()
+		return vim.fn.keytrans(vim.api.nvim_replace_termcodes(lhs, true, false, true))
+	end)
+	return ok and value or lhs
+end
+
+local function raw_lookup(global, bufnr, mode)
+	local cache = {}
+	if not global and not vim.api.nvim_buf_is_valid(bufnr) then
+		return cache
+	end
+	local list = global and state.raw.get(mode) or state.raw.buf_get(bufnr, mode)
+	for _, mapping in ipairs(list or {}) do
+		cache[mapping.lhs] = mapping
+	end
+	return cache
+end
+
+local function changed()
+	if state.on_change then
+		state.on_change()
+	end
 end
 
 local function duplicate_global(mode, lhs, rhs, opts)
@@ -252,13 +325,19 @@ local function duplicate_global(mode, lhs, rhs, opts)
 	end
 
 	local setter = state.orig.set or vim.api.nvim_set_keymap
+	local source_desc = opts and opts.desc or lhs
+	local created = false
 	for _, variant in ipairs(M.variants(lhs)) do
 		if variant.lhs ~= lhs then
 			local merged = vim.deepcopy(opts or {})
-			merged.desc = MARK .. (merged.desc or lhs)
+			merged.desc = MIRROR .. (merged.desc or lhs)
 			pcall(setter, mode, variant.lhs, rhs, merged)
-			record(true, nil, mode, variant.lhs)
+			record(true, nil, mode, variant.lhs, lhs, source_desc, variant.layout, rhs, merged)
+			created = true
 		end
+	end
+	if created then
+		changed()
 	end
 end
 
@@ -269,13 +348,19 @@ local function duplicate_buffer(buffer, mode, lhs, rhs, opts)
 
 	local bufnr = (buffer == 0 or buffer == nil) and vim.api.nvim_get_current_buf() or buffer
 	local setter = state.orig.buf_set or vim.api.nvim_buf_set_keymap
+	local source_desc = opts and opts.desc or lhs
+	local created = false
 	for _, variant in ipairs(M.variants(lhs)) do
 		if variant.lhs ~= lhs then
 			local merged = vim.deepcopy(opts or {})
-			merged.desc = MARK .. (merged.desc or lhs)
+			merged.desc = MIRROR .. (merged.desc or lhs)
 			pcall(setter, buffer, mode, variant.lhs, rhs, merged)
-			record(false, bufnr, mode, variant.lhs)
+			record(false, bufnr, mode, variant.lhs, lhs, source_desc, variant.layout, rhs, merged)
+			created = true
 		end
+	end
+	if created then
+		changed()
 	end
 end
 
@@ -322,17 +407,150 @@ function M.unhack()
 	state.hacked = false
 end
 
+--- Temporarily removes mirrored mappings so native listings can hide them.
+--- The real `desc` marker is still `pkb:mirror:` and the mappings are restored
+--- with `resume_mirrors`.
+---@return number removed
+function M.suspend_mirrors()
+	if state.suspend_active or #state.created == 0 then
+		return 0
+	end
+
+	local lookups = {}
+	local removed = 0
+	local suspended = {}
+
+	for _, item in ipairs(state.created) do
+		local scope = item.global and "g" or ("b" .. tostring(item.bufnr))
+		local lookup_key = scope .. "|" .. item.mode
+		local lookup = lookups[lookup_key]
+		if not lookup then
+			lookup = raw_lookup(item.global, item.bufnr, item.mode)
+			lookups[lookup_key] = lookup
+		end
+
+		local mapping = lookup[key_norm(item.lhs)]
+		if mapping and M.is_mirror(mapping) then
+			local ok
+			if item.global then
+				ok = pcall(state.raw.del, item.mode, item.lhs)
+			elseif vim.api.nvim_buf_is_valid(item.bufnr) then
+				ok = pcall(state.raw.buf_del, item.bufnr, item.mode, item.lhs)
+			else
+				ok = false
+			end
+			if ok then
+				suspended[#suspended + 1] = item
+				removed = removed + 1
+			end
+		end
+	end
+
+	if removed > 0 then
+		state.suspended = suspended
+		state.suspend_active = true
+	end
+	return removed
+end
+
+--- Restores mappings removed by `suspend_mirrors`.
+---@return number restored
+function M.resume_mirrors()
+	if not state.suspend_active then
+		return 0
+	end
+
+	local pending = state.suspended
+	state.suspended = {}
+	state.suspend_active = false
+
+	local lookups = {}
+	local failed = {}
+	local restored = 0
+
+	local function lookup_for(global, bufnr, mode)
+		local scope = global and "g" or ("b" .. tostring(bufnr))
+		local key = scope .. "|" .. mode
+		local lookup = lookups[key]
+		if not lookup then
+			lookup = raw_lookup(global, bufnr, mode)
+			lookups[key] = lookup
+		end
+		return lookup
+	end
+
+	for _, item in ipairs(pending) do
+		local lookup = lookup_for(item.global, item.bufnr, item.mode)
+		local source = lookup[key_norm(item.source_lhs)]
+		local current = lookup[key_norm(item.lhs)]
+		local key = restore_key(item.global, item.bufnr, item.mode, item.lhs)
+		local payload = state.restore[key]
+
+		if source and payload and not current then
+			local ok
+			if item.global then
+				ok = pcall(state.raw.set, item.mode, item.lhs, payload.rhs, payload.opts)
+			elseif vim.api.nvim_buf_is_valid(item.bufnr) then
+				ok = pcall(state.raw.buf_set, item.bufnr, item.mode, item.lhs, payload.rhs, payload.opts)
+			else
+				ok = false
+			end
+			if ok then
+				restored = restored + 1
+				lookup[key_norm(item.lhs)] = { lhs = item.lhs, desc = payload.opts and payload.opts.desc }
+			else
+				failed[#failed + 1] = item
+			end
+		end
+	end
+
+	if #failed > 0 then
+		state.suspended = failed
+		state.suspend_active = true
+	end
+	return restored
+end
+
+---@return boolean
+function M.is_suspended()
+	return state.suspend_active
+end
+
+---@return number
+function M.suspended_count()
+	return #state.suspended
+end
+
 --- Removes every mapping mirrored by this module.
 function M.cleanup()
+	local had = #state.created > 0
+	local lookups = {}
 	for _, item in ipairs(state.created) do
-		if item.global then
-			pcall(vim.api.nvim_del_keymap, item.mode, item.lhs)
-		else
-			pcall(vim.api.nvim_buf_del_keymap, item.bufnr, item.mode, item.lhs)
+		local scope = item.global and "g" or ("b" .. tostring(item.bufnr))
+		local lookup_key = scope .. "|" .. item.mode
+		local lookup = lookups[lookup_key]
+		if not lookup then
+			lookup = raw_lookup(item.global, item.bufnr, item.mode)
+			lookups[lookup_key] = lookup
+		end
+		local mapping = lookup[key_norm(item.lhs)]
+		if mapping and M.is_mirror(mapping) then
+			if item.global then
+				pcall(state.raw.del, item.mode, item.lhs)
+			elseif vim.api.nvim_buf_is_valid(item.bufnr) then
+				pcall(state.raw.buf_del, item.bufnr, item.mode, item.lhs)
+			end
 		end
 	end
 	state.created = {}
 	state.created_set = {}
+	state.created_by_key = {}
+	state.restore = {}
+	state.suspended = {}
+	state.suspend_active = false
+	if had then
+		changed()
+	end
 end
 
 local function mapping_opts(mapping)
@@ -341,7 +559,7 @@ local function mapping_opts(mapping)
 		silent = mapping.silent == 1,
 		expr = mapping.expr == 1,
 		nowait = mapping.nowait == 1,
-		desc = MARK .. (mapping.desc or mapping.lhs),
+		desc = MIRROR .. (mapping.desc or mapping.lhs),
 	}
 	if mapping.callback then
 		opts.callback = mapping.callback
@@ -362,26 +580,37 @@ local function scan_global(modes)
 	local created = 0
 	for _, mode in ipairs(modes) do
 		local existing = {}
-		local mapping_list = vim.api.nvim_get_keymap(mode)
+		local mapping_list = state.raw.get(mode)
 		for _, mapping in ipairs(mapping_list) do
 			existing[mapping.lhs] = true
 		end
 
 		for _, mapping in ipairs(mapping_list) do
 			if not M.is_ours(mapping) then
+				local opts = mapping_opts(mapping)
 				for _, variant in ipairs(M.variants(mapping.lhs)) do
 					if variant.lhs ~= mapping.lhs and not existing[variant.lhs] then
-						local setter = state.orig.set or vim.api.nvim_set_keymap
+						local setter = state.orig.set or state.raw.set
 						local ok = pcall(
 							setter,
 							mode,
 							variant.lhs,
 							mapping.rhs or "",
-							mapping_opts(mapping)
+							opts
 						)
 						if ok then
 							existing[variant.lhs] = true
-							record(true, nil, mode, variant.lhs)
+							record(
+								true,
+								nil,
+								mode,
+								variant.lhs,
+								mapping.lhs,
+								mapping.desc,
+								variant.layout,
+								mapping.rhs,
+								opts
+							)
 							created = created + 1
 						end
 					end
@@ -400,27 +629,38 @@ local function scan_buffer(bufnr, modes)
 	local created = 0
 	for _, mode in ipairs(modes) do
 		local existing = {}
-		local mapping_list = vim.api.nvim_buf_get_keymap(bufnr, mode)
+		local mapping_list = state.raw.buf_get(bufnr, mode)
 		for _, mapping in ipairs(mapping_list) do
 			existing[mapping.lhs] = true
 		end
 
 		for _, mapping in ipairs(mapping_list) do
 			if not M.is_ours(mapping) then
+				local opts = mapping_opts(mapping)
 				for _, variant in ipairs(M.variants(mapping.lhs)) do
 					if variant.lhs ~= mapping.lhs and not existing[variant.lhs] then
-						local setter = state.orig.buf_set or vim.api.nvim_buf_set_keymap
+						local setter = state.orig.buf_set or state.raw.buf_set
 						local ok = pcall(
 							setter,
 							bufnr,
 							mode,
 							variant.lhs,
 							mapping.rhs or "",
-							mapping_opts(mapping)
+							opts
 						)
 						if ok then
 							existing[variant.lhs] = true
-							record(false, bufnr, mode, variant.lhs)
+							record(
+								false,
+								bufnr,
+								mode,
+								variant.lhs,
+								mapping.lhs,
+								mapping.desc,
+								variant.layout,
+								mapping.rhs,
+								opts
+							)
 							created = created + 1
 						end
 					end
@@ -452,12 +692,31 @@ function M.automapping(opts)
 		created = created + scan_buffer(bufnr, modes)
 	end
 
+	if created > 0 then
+		changed()
+	end
 	return created
 end
 
 ---@return number
 function M.count_created()
 	return #state.created
+end
+
+--- Returns a copy of the mappings mirrored by this module.
+---@return { global: boolean, bufnr: number|nil, mode: string, lhs: string, source_lhs: string }[]
+function M.list()
+	local result = {}
+	for _, item in ipairs(state.created) do
+		result[#result + 1] = vim.deepcopy(item)
+	end
+	return result
+end
+
+--- Registers a callback invoked after mirrored mappings change.
+---@param fn function|nil
+function M.on_change(fn)
+	state.on_change = fn
 end
 
 ---@return boolean

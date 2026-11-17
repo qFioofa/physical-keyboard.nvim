@@ -470,6 +470,110 @@ function M.probe(opts)
 	return result
 end
 
+--- Non-blocking variant of `probe()` used by the UI.
+---@param opts table|nil
+---@param callback fun(results: { name: string, available: boolean, raw: string|nil, error: string|nil }[])
+function M.probe_async(opts, callback)
+	opts = opts or {}
+	local list = M.select(opts)
+	local timeout = opts.timeout or 500
+
+	if not vim.system then
+		callback(M.probe(opts))
+		return
+	end
+
+	local results = {}
+	local index = 1
+
+	local function add(provider, raw, err)
+		if type(raw) == "string" and raw ~= "" then
+			results[#results + 1] = { name = provider.name, available = true, raw = raw }
+		else
+			results[#results + 1] = {
+				name = provider.name,
+				available = false,
+				raw = nil,
+				error = err,
+			}
+		end
+	end
+
+	local function next_provider()
+		local provider = list[index]
+		index = index + 1
+		if not provider then
+			vim.schedule(function()
+				callback(results)
+			end)
+			return
+		end
+
+		local co = coroutine.create(function()
+			local ok, raw = pcall(provider.get)
+			if not ok then
+				return nil, tostring(raw)
+			end
+			if type(raw) == "string" and raw ~= "" then
+				return raw
+			end
+			return nil
+		end)
+
+		local function step(...)
+			if coroutine.status(co) == "dead" then
+				return
+			end
+
+			current_co = co
+			local ok, first, second = coroutine.resume(co, ...)
+			current_co = nil
+
+			if not ok then
+				add(provider, nil, tostring(first))
+				next_provider()
+				return
+			end
+			if coroutine.status(co) == "dead" then
+				add(provider, first, second)
+				next_provider()
+				return
+			end
+			if type(first) ~= "table" or type(first.cmd) ~= "table" then
+				add(provider, nil, "provider yielded an invalid command")
+				next_provider()
+				return
+			end
+
+			local spawn_ok, spawned = pcall(
+				vim.system,
+				first.cmd,
+				{ text = true, timeout = timeout },
+				function(obj)
+					vim.schedule(function()
+						local out = nil
+						if obj and obj.code == 0 and type(obj.stdout) == "string" then
+							out = vim.trim(obj.stdout)
+							if out == "" then
+								out = nil
+							end
+						end
+						step(out)
+					end)
+				end
+			)
+			if not spawn_ok then
+				add(provider, nil, tostring(spawned))
+				next_provider()
+			end
+		end
+
+		step()
+	end
+
+	next_provider()
+end
+
 --- Environment information used by the doctor/AI configuration flow.
 ---@return table
 function M.environment()

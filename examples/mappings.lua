@@ -11,6 +11,17 @@ require("physical-keyboard").setup({
 			["<Leader>zz"] = "<Leader>ZZ",
 		},
 	},
+	which_key = {
+		display = nil, -- hide mirrored entries, keep the original shortcuts
+		relative_group = true, -- group mirrors under the translated prefix
+		alongside = false, -- or append mirrors to the original label
+		separator = "\\",
+	},
+	native = {
+		enabled = true,
+		commandline = true, -- clean :map/:nmap output
+		api = true, -- clean Snacks/Telescope/which-key lists
+	},
 	cmdline = {
 		aliases = { "tabnew", "resize" },
 		extra = { ["цц"] = "w" },

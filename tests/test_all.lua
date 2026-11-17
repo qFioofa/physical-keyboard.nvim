@@ -4,6 +4,10 @@
 
 vim.opt.rtp:prepend(vim.fn.getcwd())
 
+local override_path = vim.fn.tempname() .. "-pkb-overrides.json"
+vim.env.PKB_OVERRIDES = override_path
+vim.fn.delete(override_path)
+
 local pkb = require("physical-keyboard")
 local config = require("physical-keyboard.config")
 local layouts = require("physical-keyboard.layouts")
@@ -11,6 +15,7 @@ local langmap = require("physical-keyboard.langmap")
 local mappings = require("physical-keyboard.mappings")
 local cmdline = require("physical-keyboard.cmdline")
 local echo = require("physical-keyboard.echo")
+local options = require("physical-keyboard.options")
 
 local passed = 0
 local failed = 0
@@ -229,7 +234,322 @@ do
 end
 
 ---------------------------------------------------------------------------
--- 7. Echo keyboard
+-- 6b. Read-only UI data APIs
+---------------------------------------------------------------------------
+do
+	print("\n== ui data apis ==")
+	disable()
+	pkb.setup({
+		enable = true,
+		notify = false,
+		active_layouts = { "ru" },
+		detect = { enabled = false },
+		mappings = { automapping = false, hack_keymap = true },
+	})
+
+	vim.keymap.set("n", "<Leader>ui-test", function() end, { desc = "ui test" })
+	local mirrored = mappings.list()
+	local found = false
+	for _, item in ipairs(mirrored) do
+		if item.source_lhs == "<Leader>ui-test" then
+			found = true
+			eq(item.mode, "n", "mappings.list records mode")
+			eq(item.global, true, "mappings.list records scope")
+			truthy(item.lhs ~= item.source_lhs, "mappings.list records translated lhs")
+		end
+	end
+	truthy(found, "mappings.list exposes mirrored mapping source")
+
+	local preview = echo.preview("hex", "й")
+	truthy(type(preview) == "string" and preview:find("0x", 1, true) ~= nil, "echo.preview formats hex")
+	eq(echo.preview("bogus", "й"), nil, "echo.preview rejects invalid mode")
+	eq(echo.preview("code", "й"), "1081", "echo.preview reports unicode codepoint")
+	truthy(type(echo.history()) == "table", "echo.history returns a list")
+
+	local providers = require("physical-keyboard.detect.providers")
+	local probe_done = false
+	local probe_results = nil
+	providers.probe_async({ providers = { "__none__" }, timeout = 50 }, function(results)
+		probe_done = true
+		probe_results = results
+	end)
+	vim.wait(1000, function()
+		return probe_done
+	end, 10)
+	truthy(probe_done, "providers.probe_async completes")
+	truthy(type(probe_results) == "table" and #probe_results == 0, "providers.probe_async handles empty selection")
+
+	disable()
+end
+
+---------------------------------------------------------------------------
+-- 6c. Floating UI
+---------------------------------------------------------------------------
+do
+	print("\n== floating ui ==")
+	disable()
+	pkb.setup({
+		enable = true,
+		notify = false,
+		active_layouts = { "ru" },
+		detect = { enabled = false },
+		mappings = { automapping = false, hack_keymap = true },
+	})
+
+	local ui = require("physical-keyboard.ui")
+	local pages = require("physical-keyboard.ui.pages")
+	vim.keymap.set("n", "<Leader>ui-bind", function() end, { desc = "ui bind" })
+	local ok, err = pcall(ui.open)
+	truthy(ok, "ui.open succeeds")
+	truthy(ui.is_open(), "ui reports open")
+	eq(ui.current(), "status.overview", "ui starts on overview")
+
+	local buf = vim.api.nvim_get_current_buf()
+	eq(vim.bo[buf].buftype, "nofile", "ui buffer is nofile")
+	eq(vim.bo[buf].filetype, "physical-keyboard-ui", "ui buffer filetype")
+	contains(table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n"), "physical-keyboard", "ui header is rendered")
+
+	local ui_keys = {}
+	for _, map in ipairs(vim.api.nvim_buf_get_keymap(buf, "n")) do
+		ui_keys[map.lhs] = true
+	end
+	truthy(ui_keys["ш"] and ui_keys["щ"], "ui i/o keys have Russian variants")
+	truthy(ui_keys["х"] and ui_keys["ъ"], "ui [ ] keys have Russian variants")
+	truthy(ui_keys["."], "ui / search key has a Russian variant")
+
+	for _, root in ipairs(pages.tree()) do
+		local select_ok, select_err = pcall(ui.select, root.id)
+		truthy(select_ok, "ui renders section: " .. root.id .. " " .. tostring(select_err))
+		for _, child in ipairs(root.children or {}) do
+			local child_ok, child_err = pcall(ui.select, child.id)
+			truthy(child_ok, "ui renders page: " .. child.id .. " " .. tostring(child_err))
+		end
+	end
+
+	ui.select("status.overview")
+	contains(table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n"), "ABOUT", "ui page starts with an explanation section")
+	ui.select("layouts")
+	eq(ui.current(), "layouts.active", "selecting a category focuses its first item")
+	ui.tree_move(-1)
+	eq(ui.current(), "layouts", "tree can move back up to the category")
+	ui.tree_move(1)
+	eq(ui.current(), "layouts.active", "tree can move back down to the first item")
+	ui.select("status.overview")
+	ui.set_pane("content")
+	truthy((ui.content_selected() or ""):match("^line:") ~= nil, "plain content lines are selectable")
+	local first_line = ui.content_selected()
+	ui.content_move(1)
+	truthy(ui.content_selected() ~= first_line, "content moves between plain text lines")
+	ui.set_pane("tree")
+
+	local help_buf = ui.help_buffer()
+	truthy(type(help_buf) == "number" and vim.api.nvim_buf_is_valid(help_buf), "ui creates a separate help buffer")
+	truthy(help_buf ~= buf, "help buffer is separate from the main panel")
+
+	truthy(ui.set_pane("content"), "ui switches to content pane")
+	eq(ui.pane(), "content", "ui reports content pane")
+	truthy(vim.api.nvim_win_get_cursor(0)[2] > 0, "cursor moves into the content pane")
+	contains(vim.wo[0].winhl, "PhyKeyboardUIBorderContent", "content pane changes the window focus color")
+	ui.set_pane("tree")
+	eq(ui.pane(), "tree", "ui reports tree pane")
+	contains(vim.wo[0].winhl, "PhyKeyboardUIBorderTree", "tree pane changes the window focus color")
+
+	ui.select("mappings.modes")
+	ui.set_pane("content")
+	eq(ui.content_selected(), "group:n", "by mode starts on the first group")
+	ui.content_activate()
+	contains(table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n"), "ui-bind", "by mode expands a group")
+	ui.content_move(1)
+	truthy((ui.content_selected() or ""):match("^item:n:") ~= nil, "content moves into bindings")
+	ui.content_move(-1)
+	eq(ui.content_selected(), "group:n", "content moves back to the group")
+
+	ui.search("ui-bind")
+	local search_text = table.concat(vim.api.nvim_buf_get_lines(help_buf, 0, -1, false), "\n")
+	local body_text = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
+	truthy(search_text:find("SEARCH", 1, true) ~= nil, "search block is rendered in the help window")
+	truthy(search_text:find("ui-bind", 1, true) ~= nil, "search block shows the query")
+	truthy(body_text:find("ui-bind", 1, true) ~= nil, "search finds a mirrored binding")
+	truthy(body_text:find("│", 1, true) ~= nil, "panes are separated by a divider")
+	ui.search("__no_such_binding__")
+	contains(table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n"), "No mirrored bindings match", "search renders an empty result")
+	ui.search("")
+	ui.select("mappings.list")
+	contains(table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n"), "MODE n", "mirrored list groups bindings by mode")
+
+	local hl = vim.api.nvim_get_hl(0, { name = "PhyKeyboardUIOK" })
+	truthy(next(hl) ~= nil, "ui highlight group is defined")
+
+	pkb.disable()
+	ui.select("status.overview")
+	local disabled_text = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
+	truthy(disabled_text:find("disabled", 1, true) ~= nil, "ui renders disabled plugin state")
+
+	local esc_callback
+	for _, map in ipairs(vim.api.nvim_buf_get_keymap(buf, "n")) do
+		if map.lhs == "<Esc>" then
+			esc_callback = map.callback
+		end
+	end
+	if type(esc_callback) == "function" then
+		ui.set_pane("content")
+		esc_callback()
+		eq(ui.pane(), "tree", "Esc returns from content to tree")
+		esc_callback()
+		truthy(not ui.is_open(), "Esc closes the window from the tree")
+	end
+	ui.close()
+	truthy(not ui.is_open(), "ui.close closes the panel")
+	truthy(pcall(ui.refresh), "ui.refresh after close is safe")
+	ui.open()
+	ui.close()
+
+	disable()
+end
+
+---------------------------------------------------------------------------
+-- 7. Options and override file
+---------------------------------------------------------------------------
+do
+	print("\n== options and overrides ==")
+	vim.fn.delete(override_path)
+	pkb.setup({
+		enable = true,
+		notify = "errors",
+		active_layouts = { "ru" },
+		detect = { enabled = false },
+		fallback = "ru",
+		mappings = { automapping = false },
+	})
+	truthy(options.spec("notify") ~= nil, "option spec is registered")
+	eq(pkb.get_option("notify"), "errors", "option getter reads the current config")
+	truthy(langmap.count(langmap.current()) > 0, "langmap is applied before option changes")
+
+	local ok, err, persisted = pkb.set_option("notify", "off")
+	truthy(ok, "set_option applies an enum " .. tostring(err))
+	truthy(persisted, "set_option persists when overrides are enabled")
+	eq(pkb.get_option("notify"), "off", "enum value changes at runtime")
+	eq(vim.fn.filereadable(override_path), 1, "override file is created")
+	local raw = vim.json.decode(table.concat(vim.fn.readfile(override_path), "\n"))
+	eq(raw.notify, "off", "override file stores the changed value")
+
+	pkb.setup({
+		enable = true,
+		notify = "errors",
+		active_layouts = { "ru" },
+		detect = { enabled = false },
+		fallback = "ru",
+		mappings = { automapping = false },
+	})
+	eq(pkb.get_option("notify"), "off", "override is loaded by the next setup")
+
+	local reset_ok = pkb.reset_overrides()
+	truthy(reset_ok, "reset_overrides succeeds")
+	eq(vim.fn.filereadable(override_path), 0, "reset removes the override file")
+	eq(pkb.get_option("notify"), "errors", "reset restores the base config")
+
+	eq(pkb.set_option("langmap.enabled", false), true, "langmap can be disabled")
+	eq(langmap.count(langmap.current()), 0, "disabling langmap clears pairs")
+	pkb.set_option("langmap.enabled", true)
+	truthy(langmap.count(langmap.current()) > 0, "enabling langmap reapplies pairs")
+
+	pkb.set_option("mappings.modes", { "n", "i" })
+	eq(table.concat(pkb.get_option("mappings.modes"), ","), "n,i", "multi option changes")
+	local bad, bad_err = pkb.set_option("mappings.modes", {})
+	truthy(not bad, "empty multi is rejected: " .. tostring(bad_err))
+
+	pkb.set_option("detect.provider", "niri")
+	eq(pkb.config.detect.provider, "niri", "provider can be forced")
+	pkb.set_option("detect.provider", "auto")
+	eq(pkb.config.detect.provider, nil, "auto removes the provider override")
+
+	pkb.set_option("active_layouts", { "ru", "de" })
+	eq(table.concat(pkb.get_option("active_layouts"), ","), "ru,de", "active layouts change")
+	truthy(not pkb.set_option("no.such.option", true), "unknown options are rejected")
+
+	local disabled_path = vim.fn.tempname() .. "-disabled.json"
+	vim.env.PKB_OVERRIDES = disabled_path
+	pkb.setup({ overrides = false, active_layouts = { "ru" }, detect = { enabled = false } })
+	eq(pkb.overrides_info().enabled, false, "overrides loading can be disabled in setup")
+	local session_ok, _, session_persisted = pkb.set_option("notify", "all")
+	truthy(session_ok, "set_option still works when overrides are disabled")
+	truthy(not session_persisted, "nothing is persisted when overrides are disabled")
+	eq(vim.fn.filereadable(disabled_path), 0, "disabled overrides do not create a file")
+	eq(pkb.get_option("notify"), "all", "disabled overrides change the session")
+
+	vim.env.PKB_OVERRIDES = override_path
+	vim.fn.delete(disabled_path)
+	vim.fn.delete(override_path)
+	disable()
+end
+
+---------------------------------------------------------------------------
+-- 8. Settings UI and picker
+---------------------------------------------------------------------------
+do
+	print("\n== settings UI ==")
+	vim.fn.delete(override_path)
+	pkb.setup({
+		enable = true,
+		notify = "errors",
+		active_layouts = { "ru" },
+		detect = { enabled = false },
+		fallback = "ru",
+		mappings = { automapping = false },
+	})
+
+	local ui = require("physical-keyboard.ui")
+	ui.open()
+	ui.select("config.effective")
+	ui.set_pane("content")
+	eq(ui.content_selected(), "setting:enable", "effective config selects the first editable row")
+	local selectables = ui.content_selectables()
+	local seen = {}
+	for _, item in ipairs(selectables) do
+		seen[item.id] = true
+	end
+	truthy(seen["setting:notify"], "notify row is editable")
+	truthy(seen["setting:detect.provider"], "nil provider is still editable")
+	truthy(seen["setting:mappings.modes"], "multi option row is editable")
+
+	ui.activate_setting("notify")
+	local picker = ui.picker()
+	truthy(picker.open, "enum option opens the picker")
+	eq(picker.items[1].label, "all — every message", "picker shows enum choices")
+	ui.picker_move(2)
+	ui.picker_confirm()
+	eq(pkb.get_option("notify"), "off", "picker applies the chosen enum value")
+	truthy(not ui.picker().open, "picker closes after apply")
+
+	ui.activate_setting("detect.provider")
+	ui.picker_move(1)
+	ui.picker_cancel()
+	eq(pkb.config.detect.provider, nil, "picker cancel leaves the value unchanged")
+	truthy(not ui.picker().open, "picker closes on cancel")
+
+	ui.activate_setting("mappings.modes")
+	ui.picker_move(4)
+	ui.picker_toggle()
+	ui.picker_confirm()
+	local modes = table.concat(pkb.get_option("mappings.modes"), ",")
+	truthy(modes:find("i", 1, true) ~= nil, "multi picker toggles a mode")
+	truthy(vim.fn.filereadable(override_path) == 1, "UI changes write the override file")
+
+	ui.select("config.effective")
+	ui.set_pane("content")
+	ui.delete_overrides()
+	truthy(ui.picker().open, "delete override opens a confirmation picker")
+	ui.picker_confirm()
+	eq(pkb.overrides_info().exists, false, "confirmation deletes the override file")
+	eq(pkb.get_option("notify"), "errors", "deleting overrides reloads base config")
+
+	ui.close()
+	vim.fn.delete(override_path)
+	disable()
+end
+
+---------------------------------------------------------------------------
+-- 9. Echo keyboard
 ---------------------------------------------------------------------------
 do
 	print("\n== echo ==")
@@ -259,6 +579,17 @@ do
 	truthy(custom_ok, "custom layout can be registered")
 	eq(layouts.get("test-custom").forward["q"], "x", "custom layout mapping is available")
 	eq(layouts.match("custom", { "test-custom" }), "test-custom", "custom layout is matched")
+
+	local override_file = vim.fn.tempname() .. ".json"
+	vim.fn.writefile({ vim.json.encode({ notify = "all" }) }, override_file)
+	vim.env.PKB_OVERRIDES = override_file
+	local loaded = config.resolve({ notify = "off" })
+	eq(loaded.notify, "all", "override file wins over setup options")
+	local ignored = config.resolve({ overrides = false, notify = "off" })
+	eq(ignored.notify, "off", "overrides=false ignores the override file")
+	eq(ignored.overrides.enabled, false, "overrides=false is reported in the resolved config")
+	vim.env.PKB_OVERRIDES = override_path
+	vim.fn.delete(override_file)
 end
 
 ---------------------------------------------------------------------------
@@ -549,8 +880,10 @@ do
 	vim.notify = function() end
 	for _, command in ipairs({
 		"PhyKeyboard",
+		"PhyKeyboardUI",
 		"PhyKeyboardStatus",
 		"PhyKeyboardConfig",
+		"PhyKeyboardConfigReset",
 		"PhyKeyboardDoctor",
 		"PhyKeyboardList",
 		"PhyKeyboardDetect",
@@ -559,6 +892,10 @@ do
 	}) do
 		local ok = pcall(vim.cmd, command)
 		truthy(ok, "command exists: " .. command)
+	end
+	if vim.fn.exists(":PhyKeyboardUI") == 2 then
+		pcall(vim.cmd, "PhyKeyboardUI")
+		pcall(require("physical-keyboard.ui").close)
 	end
 	pcall(vim.cmd, "PhyKeyboardAliases add цц w")
 	eq(cmdline.added()["цц"], "w", "alias add command registers")
@@ -585,6 +922,258 @@ do
 	pcall(vim.cmd, "PhyKeyboardToggle")
 	eq(pkb.status().enabled, true, "toggle command re-enables")
 	disable()
+end
+
+---------------------------------------------------------------------------
+-- 17. which-key integration
+---------------------------------------------------------------------------
+do
+	print("\n== which-key integration ==")
+	disable()
+
+	local invalid = config.resolve({
+		which_key = { enabled = "yes", display = "sometimes", separator = "" },
+	})
+	eq(invalid.which_key.display, nil, "invalid which-key display falls back to hide")
+	eq(invalid.which_key.separator, "\\", "empty separator falls back to a backslash")
+	truthy(#invalid.warnings > 0, "invalid which-key options warn")
+	eq(config.resolve({ which_key = false }).which_key.enabled, false, "which_key=false disables it")
+	truthy(options.spec("which_key.alongside") ~= nil, "which-key options are editable")
+	local separator, separator_err = options.normalize(options.spec("which_key.separator"), "|")
+	eq(separator, "|", "which-key separator accepts a custom string")
+	eq(separator_err, nil, "which-key separator validation succeeds")
+
+	local which_key = require("physical-keyboard.which_key")
+	local fake_cfg = {
+		loaded = true,
+		version = "3.17.0",
+		mappings = {
+			{ lhs = "<Leader>wkt", group = true, desc = "find", mode = "n" },
+		},
+	}
+	local cleared = 0
+	local fake_wk = {
+		_queue = {},
+		add = function() end,
+	}
+	local saved = {
+		wk = package.loaded["which-key"],
+		cfg = package.loaded["which-key.config"],
+		mp = package.loaded["which-key.mappings"],
+		buf = package.loaded["which-key.buf"],
+	}
+	package.loaded["which-key"] = fake_wk
+	package.loaded["which-key.config"] = fake_cfg
+	package.loaded["which-key.mappings"] = {
+		parse = function(specs)
+			return vim.deepcopy(specs)
+		end,
+	}
+	package.loaded["which-key.buf"] = {
+		clear = function()
+			cleared = cleared + 1
+		end,
+	}
+
+	mappings.setup({ active_ids = { "ru" } })
+	mappings.hack()
+	vim.keymap.set("n", "<Leader>wktff", "<cmd>echo 1<cr>", { desc = "Find files" })
+	mappings.unhack()
+	which_key.setup({ enabled = true })
+	which_key.refresh()
+
+	local function find_spec(lhs)
+		for _, spec in ipairs(fake_cfg.mappings) do
+			if spec.lhs == lhs then
+				return spec
+			end
+		end
+		return nil
+	end
+
+	local hidden = find_spec("<Leader>цлеаа")
+	truthy(hidden and hidden.hidden, "default which-key display hides mirrored mappings")
+	truthy(find_spec("<Leader>цле") == nil, "hidden mode does not create a mirror group")
+	truthy(cleared > 0, "which-key buffer cache is cleared")
+
+	which_key.setup({ enabled = true, relative_group = true })
+	which_key.refresh()
+	local group = find_spec("<Leader>цле")
+	truthy(group and group.group == "find", "relative_group copies the original group label")
+	local visible = find_spec("<Leader>цлеаа")
+	truthy(visible and visible.desc == "Find files", "relative_group shows the original description")
+	truthy(not visible.hidden, "relative_group mapping is visible")
+
+	which_key.setup({ enabled = true, relative_group = true, alongside = true, separator = "\\" })
+	which_key.refresh()
+	local alongside = find_spec("<Leader>wktff")
+	truthy(
+		alongside
+			and alongside.desc:find("Find files", 1, true)
+			and alongside.desc:find("\\", 1, true)
+			and alongside.desc:find("<Leader>цлеаа", 1, true),
+		"alongside appends mirrored keys to the original label"
+	)
+	truthy(find_spec("<Leader>цле") == nil, "alongside takes precedence over relative_group")
+	local hidden_along = find_spec("<Leader>цлеаа")
+	truthy(hidden_along and hidden_along.hidden, "alongside hides the separate mirrored entry")
+
+	which_key.cleanup()
+	local leftovers = 0
+	for _, spec in ipairs(fake_cfg.mappings) do
+		if spec._pkb then
+			leftovers = leftovers + 1
+		end
+	end
+	eq(leftovers, 0, "which-key cleanup removes registered specs")
+
+	which_key.setup({ enabled = true })
+	which_key.refresh()
+	which_key.setup({ enabled = false })
+	local disabled_leftovers = 0
+	for _, spec in ipairs(fake_cfg.mappings) do
+		if spec._pkb then
+			disabled_leftovers = disabled_leftovers + 1
+		end
+	end
+	eq(disabled_leftovers, 0, "disabling which_key removes registered specs")
+
+	local v2_calls = {}
+	package.loaded["which-key"] = {
+		register = function(spec, opts)
+			v2_calls[#v2_calls + 1] = { spec = spec, opts = opts }
+		end,
+	}
+	package.loaded["which-key.config"] = nil
+	package.loaded["which-key.mappings"] = nil
+	package.loaded["which-key.buf"] = nil
+	which_key.setup({ enabled = true })
+	which_key.refresh()
+	truthy(#v2_calls > 0, "which-key 2.x uses the legacy register API")
+	local v2_hidden = nil
+	for _, call in ipairs(v2_calls) do
+		if call.spec["<Leader>цлеаа"] then
+			v2_hidden = call.spec["<Leader>цлеаа"]
+			eq(call.opts.mode, "n", "which-key 2.x receives the mapping mode")
+		end
+	end
+	truthy(v2_hidden and v2_hidden.hidden, "which-key 2.x hides mirrored mappings")
+
+	which_key.cleanup()
+	mappings.cleanup()
+	pcall(vim.keymap.del, "n", "<Leader>wktff")
+
+	package.loaded["which-key"] = saved.wk
+	package.loaded["which-key.config"] = saved.cfg
+	package.loaded["which-key.mappings"] = saved.mp
+	package.loaded["which-key.buf"] = saved.buf
+end
+
+
+---------------------------------------------------------------------------
+-- 18. native listings
+---------------------------------------------------------------------------
+do
+	print("\n== native listings ==")
+	disable()
+	local native = require("physical-keyboard.native")
+
+	local cfg = config.resolve({ native = false })
+	eq(cfg.native.enabled, false, "native=false disables native listings")
+	local partial = config.resolve({ native = { api = false } })
+	eq(partial.native.api, false, "native.api can be disabled independently")
+	eq(partial.native.commandline, true, "native.commandline keeps its default")
+	local invalid = config.resolve({ native = { api = "yes" } })
+	eq(invalid.native.api, true, "invalid native.api falls back to true")
+	truthy(#invalid.warnings > 0, "invalid native options warn")
+	truthy(options.spec("native.api") ~= nil, "native options are editable")
+
+	eq(native.analyze("nmap") and native.analyze("nmap").listing, true, "nmap is a listing")
+	eq(native.analyze("nm") and native.analyze("nm").listing, true, "abbreviated nmap is a listing")
+	eq(native.analyze("nmap <buffer>") and native.analyze("nmap <buffer>").listing, true, "nmap <buffer> is a listing")
+	eq(native.analyze("nmap <leader>f") and native.analyze("nmap <leader>f").listing, true, "single LHS is a listing")
+	eq(native.analyze("verbose nmap") and native.analyze("verbose nmap").listing, true, "verbose nmap is a listing")
+	eq(native.analyze("filter /x/ nmap") and native.analyze("filter /x/ nmap").listing, true, "filtered nmap is a listing")
+	eq(native.analyze("map!") and native.analyze("map!").listing, true, "map! is a listing")
+	eq(
+		native.analyze("nmap <expr> <leader>f") and native.analyze("nmap <expr> <leader>f").listing,
+		true,
+		"nmap <expr> with only an LHS is a listing"
+	)
+	eq(native.analyze("nmap <leader>f x").listing, false, "nmap lhs rhs is a definition")
+	eq(native.analyze("nmap <expr> <leader>f x").listing, false, "expr definition is not a listing")
+	eq(native.analyze("nmap <buffer> <leader>f x").listing, false, "buffer definition is not a listing")
+	eq(native.analyze("nunmap x"), nil, "nunmap is not a listing")
+	eq(native.analyze("mapclear"), nil, "mapclear is not a listing")
+	eq(native.analyze("nmap | echo 1"), nil, "multi-command lines are ignored")
+
+	mappings.cleanup()
+	mappings.setup({ active_ids = { "ru" } })
+	mappings.hack()
+
+	vim.keymap.set("n", "zqzx", function() end, { desc = "native global" })
+	local global_variant = mappings.variants("zqzx")[1].lhs
+	truthy(vim.fn.maparg(global_variant, "n") ~= "", "global mirror exists before native filtering")
+	local mirror = vim.fn.maparg(global_variant, "n", false, true)
+	truthy(mappings.is_mirror(mirror), "mirrors use the dedicated pkb:mirror: marker")
+
+	local buf = vim.api.nvim_create_buf(false, true)
+	vim.keymap.set("n", "bqbz", function() end, { buffer = buf, desc = "native buffer" })
+	local buffer_variant = mappings.variants("bqbz")[1].lhs
+
+	native.setup({ enabled = true, commandline = true, api = true })
+	truthy(native.status().api_patched, "native patches Lua keymap getters")
+
+	local function lhs_list(list)
+		local result = {}
+		for _, item in ipairs(list) do
+			result[item.lhs] = true
+		end
+		return result
+	end
+
+	local global_list = lhs_list(vim.api.nvim_get_keymap("n"))
+	truthy(global_list["zqzx"], "getter keeps the original global mapping")
+	truthy(not global_list[global_variant], "getter hides the global mirror")
+	local buffer_list = lhs_list(vim.api.nvim_buf_get_keymap(buf, "n"))
+	truthy(buffer_list["bqbz"], "buffer getter keeps the original mapping")
+	truthy(not buffer_list[buffer_variant], "buffer getter hides the buffer mirror")
+	truthy(vim.fn.maparg(global_variant, "n") ~= "", "getter filtering leaves the real mirror active")
+
+	vim.keymap.set("n", "uiq", function() end, { desc = "pkb: UI internal" })
+	local ui_mapping = nil
+	for _, item in ipairs(vim.api.nvim_get_keymap("n")) do
+		if item.lhs == "uiq" then
+			ui_mapping = item
+		end
+	end
+	truthy(ui_mapping ~= nil, "internal pkb: mappings are not treated as mirrors")
+
+	local removed = mappings.suspend_mirrors()
+	truthy(removed > 0, "suspend_mirrors removes mirrors")
+	truthy(mappings.is_suspended(), "mapper reports a suspended state")
+	eq(vim.fn.maparg(global_variant, "n"), "", "suspended global mirror is absent")
+	local restored = mappings.resume_mirrors()
+	truthy(restored > 0, "resume_mirrors restores mirrors")
+	truthy(vim.fn.maparg(global_variant, "n") ~= "", "restored global mirror is active")
+	truthy(not mappings.is_suspended(), "mapper clears the suspended state")
+
+	native.setup({ enabled = true, commandline = true, api = false })
+	local unfiltered = lhs_list(vim.api.nvim_get_keymap("n"))
+	truthy(unfiltered[global_variant], "native.api=false exposes mirrors again")
+	native.setup({ enabled = true, commandline = true, api = true })
+	truthy(not lhs_list(vim.api.nvim_get_keymap("n"))[global_variant], "native.api=true hides mirrors again")
+
+	native.disable()
+	truthy(not native.status().api_patched, "native.disable restores the getters")
+	local after_disable = lhs_list(vim.api.nvim_get_keymap("n"))
+	truthy(after_disable[global_variant], "getters expose mirrors after native.disable")
+
+	mappings.unhack()
+	mappings.cleanup()
+	pcall(vim.keymap.del, "n", "zqzx")
+	pcall(vim.keymap.del, "n", "uiq")
+	pcall(vim.api.nvim_buf_delete, buf, { force = true })
 end
 
 ---------------------------------------------------------------------------

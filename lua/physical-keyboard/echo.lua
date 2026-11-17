@@ -6,11 +6,14 @@ local M = {}
 
 local MODES = { "all", "byte", "hex", "raw", "code", "minimal", "debug" }
 
+local HISTORY_LIMIT = 50
+
 local state = {
 	enabled = false,
 	mode = "all",
 	ns = nil,
 	callback = nil,
+	history = {},
 	notify = function(message)
 		vim.notify(message, vim.log.levels.INFO)
 	end,
@@ -33,17 +36,20 @@ local function decimal(char)
 end
 
 local function codepoint(char)
+	local ok, value = pcall(vim.fn.char2nr, char)
+	if ok and type(value) == "number" and value >= 0 then
+		return tostring(value)
+	end
 	if utf8 and utf8.codepoint then
-		local ok, value = pcall(utf8.codepoint, char)
-		if ok then
-			return tostring(value)
+		local utf_ok, utf_value = pcall(utf8.codepoint, char)
+		if utf_ok then
+			return tostring(utf_value)
 		end
 	end
 	return tostring(string.byte(char, 1))
 end
 
-local function format(char)
-	local mode = state.mode
+local function format_with(char, mode)
 	if mode == "byte" then
 		return decimal(char)
 	elseif mode == "hex" then
@@ -66,10 +72,26 @@ local function format(char)
 	return string.format("'%s' (%s)", char, bytes(char))
 end
 
+local function format(char)
+	return format_with(char, state.mode)
+end
+
+local function remember(char)
+	state.history[#state.history + 1] = {
+		char = char,
+		mode = state.mode,
+		text = format(char),
+	}
+	while #state.history > HISTORY_LIMIT do
+		table.remove(state.history, 1)
+	end
+end
+
 local function display(char)
 	if char == "" or char == "0" then
 		return
 	end
+	remember(char)
 	state.notify(
 		string.format("[Echo Keyboard] mode=%s\n%s", vim.api.nvim_get_mode().mode, format(char))
 	)
@@ -148,6 +170,32 @@ end
 ---@return boolean
 function M.is_enabled()
 	return state.enabled
+end
+
+--- Returns a copy of the captured key history (oldest first).
+---@param count number|nil
+---@return { char: string, mode: string, text: string }[]
+function M.history(count)
+	local result = {}
+	local from = 1
+	if count and count > 0 and #state.history > count then
+		from = #state.history - count + 1
+	end
+	for index = from, #state.history do
+		result[#result + 1] = vim.deepcopy(state.history[index])
+	end
+	return result
+end
+
+--- Formats a character as the given echo mode would display it.
+---@param mode string
+---@param char string
+---@return string|nil
+function M.preview(mode, char)
+	if not M.is_valid_mode(mode) or type(char) ~= "string" or char == "" then
+		return nil
+	end
+	return format_with(char, mode)
 end
 
 return M

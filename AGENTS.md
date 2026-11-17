@@ -49,9 +49,13 @@ stylua lua tests
 # Health check inside Neovim
 :checkhealth physical-keyboard
 
+# Floating dashboard; Config -> Effective is editable
+:PhyKeyboardUI
+
 # Machine-readable environment report (for AI)
 :PhyKeyboardDoctor --json
 :PhyKeyboardConfig --json
+:PhyKeyboardConfigReset
 ```
 
 There is no package manager, build step, or generated code. Layout data in
@@ -62,15 +66,20 @@ There is no package manager, build step, or generated code. Layout data in
 | File | Responsibility |
 |------|----------------|
 | `lua/physical-keyboard/init.lua` | Public API, lifecycle, langmap application, events, statusline, doctor entry point |
-| `config.lua` | Defaults, file/env loading, validation, notifications |
+| `config.lua` | Defaults, file/env/override loading, validation, notifications |
+| `options.lua` | Editable option specs, choices, validation and formatting |
+| `overrides.lua` | JSON state override file, atomic writes, reset |
 | `langmap.lua` | Build/apply/restore `'langmap'`, escaping, pair counting |
 | `layouts/init.lua` | Registry, forward/reverse maps, matching, LCID normalization |
 | `layouts/data.lua` | Bundled layout data (English → native) |
 | `mappings.lua` | Mirror mappings, keymap API hook, exclusions and extras |
+| `which_key.lua` | which-key 3.x/2.x presentation: hide, relative groups, alongside labels |
+| `native.lua` | Native listing filter: cmdline suspension, Lua getter wrappers, SafeState/watchdog restore |
 | `detect/init.lua` | Throttling, remote policy, sync/async detection state |
 | `detect/providers.lua` | OS/compositor adapters, selection, probing, async runner |
 | `cmdline.lua` | `cnoreabbrev` aliases and runtime add/remove |
 | `commands.lua` | All `:PhyKeyboard*` commands |
+| `ui/` | Floating dashboard (`:PhyKeyboardUI`); Config → Effective and the picker are editable |
 | `echo.lua` | Raw key diagnostic mode |
 | `health.lua` | `:checkhealth` report |
 | `doctor.lua` | JSON environment report used by AI configuration flows |
@@ -92,11 +101,26 @@ There is no package manager, build step, or generated code. Layout data in
   (`detect.async = true`) and must not block the editor.
 - On SSH the local layout is irrelevant. `detect.remote = "auto"` disables
   detection; use `active_layouts` or force a layout.
+- UI edits are stored in a JSON override file under `stdpath("state")`; never
+  rewrite the user's Lua config or `setup()` table.
+- `overrides = false` ignores that file for the whole session.
 - Detection matches the raw OS string against **all** bundled layouts and adds
   the discovered layout at runtime.
 - `fallback = "unique"` keeps only non-conflicting pairs when the layout is
   unknown. With one active layout, a hard fallback such as `"ru"` is usually
   better.
+- Mirrors are marked `pkb:mirror:`; the broad `pkb:` marker is also used by
+  internal UI mappings and must not be filtered.
+- `native.api` wraps `nvim_get_keymap`/`nvim_buf_get_keymap` and filters only
+  the returned copy. It must never delete real mappings.
+- `native.commandline` may delete mirrors only immediately before a native
+  listing executes and must restore them via `SafeState` plus window/timer
+  guards. Map definitions must never run with mirrors suspended.
+- Do not wrap `vim.fn.maparg` or `getcompletion(..., "mapping")`: which-key
+  triggers and other plugins use them for real key handling. `<Tab>` completion
+  for map commands is intentionally not filtered.
+- Programmatic `<Cmd>nmap<CR>`, `:execute "nmap"`, `:redir` captures and
+  multi-command `|` lines are out of scope.
 
 ## AI configuration playbook
 
@@ -134,6 +158,8 @@ automatic detection on, `fallback = "unique"`.
 | “I'm on Windows” | Offer to install `im-select.exe`; PowerShell is best-effort. |
 | “I use SSH / a remote server” | Keep `detect.remote = "auto"`; set `active_layouts`/`fallback`. |
 | “My plugin shortcuts don't work” | Check `mappings.hack_keymap`, run `:PhyKeyboardMappings`, add exclusions only if needed. |
+| “`:nmap`/Snacks/Telescope show duplicates” | Keep `native = { enabled = true, commandline = true, api = true }`; see the native listing caveats. |
+| “A plugin needs to see mirrored mappings” | Set `native = { api = false }`; do not disable mirroring. |
 | “I don't want mirroring” | `mappings.enabled = false`. |
 | “I want a statusline indicator” | Add `statusline()` to lualine/statusline; see below. |
 | “I want a toggle key” | Set `toggle_key = "<leader>tk"` or use `:PhyKeyboardToggle`. |
@@ -456,8 +482,9 @@ mappings = {
 ## Configuration reference
 
 Top level: `config_file`, `env`, `enable`, `notify`, `active_layouts`,
-`fallback`, `toggle_key`, `detect`, `langmap`, `mappings`, `cmdline`, `echo`.
-`env = false` ignores `PKB_*` variables (including `PKB_CONFIG`).
+`fallback`, `toggle_key`, `detect`, `langmap`, `mappings`, `which_key`,
+`native`, `cmdline`, `echo`.  `env = false` ignores `PKB_*` variables (including
+`PKB_CONFIG`).
 
 `detect`: `enabled`, `provider`, `providers`, `remote`, `min_interval`,
 `timeout`, `events`, `async`, `on_change`.
@@ -465,6 +492,16 @@ Top level: `config_file`, `env`, `enable`, `notify`, `active_layouts`,
 `mappings`: `enabled`, `hack_keymap`, `automapping`, `modes`, `exclude`,
 `extra`.  `modes` defaults to `n,x,s,o`; add `i`, `c`, or `t` when the user
 explicitly wants those mappings mirrored.
+
+`which_key`: `enabled`, `display`, `relative_group`, `alongside`, `separator`.
+`display = nil`/`"hide"` hides mirrors; precedence is `alongside` →
+`relative_group` → `hide`.  A translated prefix group replaces the original
+group label; which-key cannot place a translated key inside the original group.
+
+`native`: `enabled`, `commandline`, `api`.  `commandline` filters native
+`:map`/`:nmap` output by temporarily suspending mirrors; `api` filters
+`nvim_get_keymap`/`nvim_buf_get_keymap`.  With `api = true`, disabling
+`which_key` alone does not expose mirrors to Lua consumers.
 
 `cmdline`: `enabled`, `aliases`, `extra`.
 
@@ -488,7 +525,12 @@ Then:
 - test an English layout response and a remote session if the change touches
   detection;
 - confirm no `E357` when applying `langmap`;
-- confirm Insert-mode text is unchanged.
+- confirm Insert-mode text is unchanged;
+- confirm `:nmap`/`:verbose nmap` hide mirrors, while a definition
+  (`:nmap QQ :echo 1<CR>`) still works and mirrors return afterwards;
+- confirm Snacks/Telescope keymap pickers hide mirrors but the actual mirror
+  binding still works after switching windows;
+- confirm `native.api = false` exposes mirrors to Lua getters again.
 
 ## Adding a layout
 
